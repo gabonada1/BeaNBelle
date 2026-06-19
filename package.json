@@ -1,0 +1,12 @@
+{
+  "name": "bea-n-belle",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:preview": "npm --prefix frontend run preview",
+    "backend:dev": "npm --prefix server run dev",
+    "backend:start": "npm --prefix server start"
+  }
+}

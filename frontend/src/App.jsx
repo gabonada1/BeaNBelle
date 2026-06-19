@@ -1,0 +1,267 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { LoginPage } from "./features/auth/LoginPage.jsx";
+import { DashboardLayout } from "./layouts/DashboardLayout.jsx";
+import { DashboardPage } from "./features/dashboard/DashboardPage.jsx";
+import { SalesDashboard } from "./features/sales/SalesDashboard.jsx";
+import { InventoryPage } from "./features/inventory/InventoryPage.jsx";
+import { StockPage } from "./features/stocks/StockPage.jsx";
+import { ReportsPage } from "./features/reports/ReportsPage.jsx";
+import { ReturnsPage } from "./features/returns/ReturnsPage.jsx";
+import { BranchesPage } from "./features/branches/BranchesPage.jsx";
+import { UsersPage } from "./features/users/UsersPage.jsx";
+import { loginUser } from "./services/authApi.js";
+import {
+  createBranch,
+  createProduct,
+  createRefund,
+  createSale,
+  createStockMovement,
+  createUser,
+  getBranches,
+  getSummary,
+  getUsers
+} from "./services/storeApi.js";
+
+const baseTabs = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "sales", label: "Sales" },
+  { id: "stocks", label: "Stocks" },
+  { id: "inventory", label: "Inventory" },
+  { id: "returns", label: "Returns" },
+  { id: "reports", label: "Reports" }
+];
+
+const ownerTabs = [
+  { id: "branches", label: "Branches" },
+  { id: "users", label: "Users" }
+];
+
+const emptySummary = {
+  branchId: "all",
+  branchName: "All Branches",
+  inventory: [],
+  recentSales: [],
+  refunds: [],
+  stockMovements: [],
+  salesByBranch: [],
+  totalItems: 0,
+  totalPurchases: 0,
+  totalRevenue: 0,
+  totalSales: 0,
+  totalStock: 0,
+  grossProfit: 0
+};
+
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [selectedBranchId, setSelectedBranchId] = useState("all");
+  const [branches, setBranches] = useState([]);
+  const [summary, setSummary] = useState(emptySummary);
+  const [users, setUsers] = useState([]);
+  const [lastReceipt, setLastReceipt] = useState(null);
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [pageError, setPageError] = useState("");
+  const tabs = useMemo(
+    () => (session?.role === "admin" ? [...baseTabs, ...ownerTabs] : baseTabs),
+    [session?.role]
+  );
+
+  const refreshStore = useCallback(async (branchId = selectedBranchId) => {
+    if (!session?.token) {
+      return;
+    }
+
+    setPageError("");
+
+    try {
+      const [branchesResult, summaryResult] = await Promise.all([
+        getBranches(session.token),
+        getSummary(session.token, branchId)
+      ]);
+
+      setBranches(branchesResult.branches);
+      setSummary(summaryResult.summary);
+    } catch (error) {
+      setPageError(error.message);
+    }
+  }, [selectedBranchId, session?.token]);
+
+  const loadUsers = useCallback(async () => {
+    if (!session?.token || session.role !== "admin") {
+      return;
+    }
+
+    const result = await getUsers(session.token);
+    setUsers(result.users);
+  }, [session?.role, session?.token]);
+
+  useEffect(() => {
+    refreshStore();
+  }, [refreshStore]);
+
+  useEffect(() => {
+    if (session?.role === "admin" && branches.length === 0 && !["branches", "users"].includes(activeTab)) {
+      setActiveTab("branches");
+    }
+  }, [activeTab, branches.length, session?.role]);
+
+  if (!session) {
+    return (
+      <LoginPage
+        error={loginError}
+        isLoading={isLoggingIn}
+        onLogin={handleLogin}
+      />
+    );
+  }
+
+  async function handleLogin(credentials) {
+    setLoginError("");
+    setIsLoggingIn(true);
+
+    try {
+      const { token, user } = await loginUser(credentials);
+      const employeeSession = {
+        token,
+        branchId: user.branchId ?? "all",
+        branchName: user.branchName ?? "All Branches",
+        role: user.role === "owner" ? "admin" : user.role,
+        userName: user.name
+      };
+
+      setSession(employeeSession);
+      setSelectedBranchId(employeeSession.role === "admin" ? "all" : employeeSession.branchId);
+      setActiveTab("dashboard");
+    } catch (error) {
+      setLoginError(error.message);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
+  async function handleRecordSale(sale) {
+    const result = await createSale(session.token, sale);
+    setLastReceipt(result.sale);
+    await refreshStore(selectedBranchId);
+  }
+
+  function handleBranchChange(branchId) {
+    if (session.role !== "admin") {
+      setSelectedBranchId(session.branchId);
+      refreshStore(session.branchId);
+      return;
+    }
+
+    setSelectedBranchId(branchId);
+    refreshStore(branchId);
+  }
+
+  async function handleAddStock(stockMovement) {
+    await createStockMovement(session.token, stockMovement);
+    await refreshStore(selectedBranchId);
+  }
+
+  async function handleAddProduct(product) {
+    await createProduct(session.token, product);
+    await refreshStore(selectedBranchId);
+  }
+
+  async function handleRefund(refund) {
+    await createRefund(session.token, refund);
+    await refreshStore(selectedBranchId);
+  }
+
+  async function handleAddBranch(branch) {
+    await createBranch(session.token, branch);
+    await refreshStore(selectedBranchId);
+  }
+
+  async function handleAddUser(user) {
+    await createUser(session.token, user);
+    await loadUsers();
+  }
+
+  return (
+    <DashboardLayout
+      activeTab={activeTab}
+      branches={branches}
+      selectedBranchId={selectedBranchId}
+      session={session}
+      tabs={tabs}
+      totalBranches={branches.length}
+      onBranchChange={handleBranchChange}
+      onLogout={() => {
+        setSession(null);
+        setBranches([]);
+        setSummary(emptySummary);
+        setUsers([]);
+      }}
+      onTabChange={setActiveTab}
+    >
+      {pageError && <p className="error-message">{pageError}</p>}
+      {activeTab === "dashboard" && (
+        <DashboardPage
+          branches={branches}
+          session={session}
+          summary={summary}
+        />
+      )}
+      {activeTab === "sales" && (
+        <SalesDashboard
+          session={session}
+          summary={summary}
+          lastReceipt={lastReceipt}
+          onRecordSale={handleRecordSale}
+        />
+      )}
+      {activeTab === "stocks" && (
+        <StockPage
+          branches={branches}
+          session={session}
+          summary={summary}
+          onRecordSale={handleRecordSale}
+        />
+      )}
+      {activeTab === "inventory" && (
+        <InventoryPage
+          branches={branches}
+          session={session}
+          stockHistory={summary.stockMovements}
+          summary={summary}
+          onAddProduct={handleAddProduct}
+          onAddStock={handleAddStock}
+        />
+      )}
+      {activeTab === "returns" && (
+        <ReturnsPage
+          branches={branches}
+          refundRecords={summary.refunds}
+          sales={summary.recentSales}
+          session={session}
+          onRefund={handleRefund}
+        />
+      )}
+      {activeTab === "reports" && (
+        <ReportsPage
+          refundRecords={summary.refunds}
+          session={session}
+          stockHistory={summary.stockMovements}
+          summary={summary}
+        />
+      )}
+      {activeTab === "branches" && (
+        <BranchesPage branches={branches} onAddBranch={handleAddBranch} />
+      )}
+      {activeTab === "users" && (
+        <UsersPage
+          branches={branches}
+          users={users}
+          onAddUser={handleAddUser}
+          onLoadUsers={loadUsers}
+        />
+      )}
+    </DashboardLayout>
+  );
+}

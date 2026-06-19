@@ -1,0 +1,691 @@
+import React, { useMemo, useState } from "react";
+import { formatCurrency, formatDate } from "../../utils/formatters.js";
+
+export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [reportPeriod, setReportPeriod] = useState("daily");
+  const [reportDate, setReportDate] = useState(today);
+  const todaysSales = summary.recentSales.filter((sale) => sale.date === today);
+  const todaysTotal = todaysSales.reduce((total, sale) => total + sale.amount, 0);
+  const totalRevenue = summary.totalRevenue ?? summary.totalSales;
+  const totalPurchases = summary.totalPurchases ?? stockHistory.reduce((total, record) => total + (record.purchaseTotal ?? 0), 0);
+  const grossProfit = summary.grossProfit ?? totalRevenue - totalPurchases;
+  const employeeSales = summary.recentSales.filter((sale) => sale.employee === session.userName);
+  const productTotals = summary.recentSales.reduce((result, sale) => {
+    (sale.lineItems ?? []).forEach((item) => {
+      result[item.productName] = (result[item.productName] ?? 0) + item.quantity;
+    });
+    return result;
+  }, {});
+  const bestSeller = Object.entries(productTotals).sort((a, b) => b[1] - a[1])[0];
+  const maxBranchTotal = Math.max(...summary.salesByBranch.map((branch) => branch.total), 1);
+  const lowStocks = summary.inventory.filter((product) => {
+    const count = summary.branchId === "all"
+      ? Object.values(product.stock).reduce((total, value) => total + value, 0)
+      : product.stock[summary.branchId];
+
+    return count <= 5;
+  });
+  const chartProducts = Object.entries(productTotals).slice(0, 5);
+  const maxProductQty = Math.max(...chartProducts.map(([, qty]) => qty), 1);
+  const reportRange = useMemo(() => getReportRange(reportPeriod, reportDate), [reportDate, reportPeriod]);
+  const filteredSales = summary.recentSales.filter((sale) => isWithinRange(sale.date, reportRange));
+  const filteredPurchases = stockHistory.filter((record) => isWithinRange(record.date, reportRange));
+  const detailedSalesItems = filteredSales.flatMap((sale) => {
+    const lineItems = sale.lineItems?.length
+      ? sale.lineItems
+      : [{
+          productName: sale.productName ?? sale.customer ?? "Walk-in sale",
+          priceType: "retail",
+          quantity: sale.items ?? 0,
+          unitPrice: sale.items ? (sale.amount ?? 0) / sale.items : sale.amount ?? 0,
+          total: sale.amount ?? 0
+        }];
+
+    return lineItems.map((item, index) => ({
+      id: `${sale.id}-${item.productId ?? index}`,
+      date: sale.date,
+      saleId: sale.id,
+      employee: sale.employee ?? "Branch Staff",
+      paymentMethod: sale.paymentMethod ?? "Cash",
+      priceType: item.priceType === "reseller" ? "Reseller" : "Retail",
+      productName: item.productName,
+      quantity: Number(item.quantity ?? 0),
+      total: Number(item.total ?? 0),
+      unitPrice: Number(item.unitPrice ?? 0)
+    }));
+  });
+  const filteredSalesTotal = filteredSales.reduce((total, sale) => total + (sale.amount ?? 0), 0);
+  const filteredPurchaseTotal = filteredPurchases.reduce((total, record) => total + (record.purchaseTotal ?? 0), 0);
+  const filteredItemCount = filteredSales.reduce((total, sale) => total + (sale.items ?? 0), 0);
+  const purchaseQuantityTotal = filteredPurchases.reduce((total, record) => total + Number(record.quantity ?? 0), 0);
+  const reportTitle = `${capitalize(reportPeriod)} report`;
+  const reportDateRange = reportRange.start === reportRange.end
+    ? formatDate(reportRange.start)
+    : `${formatDate(reportRange.start)} to ${formatDate(reportRange.end)}`;
+
+  function handlePrint() {
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+
+    printWindow.document.write(createReportDocument({
+      detailedSalesItems,
+      filteredItemCount,
+      filteredPurchaseTotal,
+      filteredPurchases,
+      filteredSales,
+      filteredSalesTotal,
+      purchaseQuantityTotal,
+      reportDateRange,
+      reportTitle,
+      session,
+      summary
+    }));
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }
+
+  return (
+    <div className="page-grid report-screen">
+      <section className="metric-row">
+        <article className="metric-card accent">
+          <span>Today sales</span>
+          <strong>{formatCurrency(todaysTotal)}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Revenue</span>
+          <strong>{formatCurrency(totalRevenue)}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Stock purchases</span>
+          <strong>{formatCurrency(totalPurchases)}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Revenue after purchases</span>
+          <strong>{formatCurrency(grossProfit)}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Transactions today</span>
+          <strong>{todaysSales.length}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Best-selling item</span>
+          <strong>{bestSeller?.[0] ?? "No sales yet"}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Your sales count</span>
+          <strong>{employeeSales.length}</strong>
+        </article>
+      </section>
+
+      <section className="panel printable-report">
+        <div className="panel-heading report-controls-heading">
+          <div>
+            <h3>Printable Transaction Reports</h3>
+            <p>Generate a clean POS-style report with item quantities, prices, and totals</p>
+          </div>
+          <button className="primary-button no-print" onClick={handlePrint} type="button">
+            Print detailed report
+          </button>
+        </div>
+
+        <div className="report-toolbar no-print">
+          <label className="field">
+            <span>Report period</span>
+            <select value={reportPeriod} onChange={(event) => setReportPeriod(event.target.value)}>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Report date</span>
+            <input type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} />
+          </label>
+        </div>
+
+        <div className="print-header">
+          <p className="eyebrow">Bea n Belle</p>
+          <h3>{reportTitle}</h3>
+          <p>{summary.branchName} - {reportDateRange}</p>
+        </div>
+
+        <div className="report-grid compact-report-grid">
+          <article className="report-card">
+            <span>Sales total</span>
+            <strong>{formatCurrency(filteredSalesTotal)}</strong>
+            <p>{filteredSales.length} sales transactions</p>
+          </article>
+          <article className="report-card">
+            <span>Stock purchases</span>
+            <strong>{formatCurrency(filteredPurchaseTotal)}</strong>
+            <p>{filteredPurchases.length} stock-in records</p>
+          </article>
+          <article className="report-card">
+            <span>Items sold</span>
+            <strong>{filteredItemCount}</strong>
+            <p>Selected {reportPeriod} period</p>
+          </article>
+        </div>
+
+        <div className="report-section">
+          <div className="panel-heading compact-heading">
+            <h3>Detailed Sales Items</h3>
+            <p>{detailedSalesItems.length} item rows</p>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Sale ID</th>
+                  <th>Item</th>
+                  <th>Price type</th>
+                  <th>Price</th>
+                  <th>Qty</th>
+                  <th>Total price</th>
+                  <th>Employee</th>
+                  <th>Payment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detailedSalesItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>{formatDate(item.date)}</td>
+                    <td>{item.saleId}</td>
+                    <td>{item.productName}</td>
+                    <td>{item.priceType}</td>
+                    <td>{formatCurrency(item.unitPrice)}</td>
+                    <td>{item.quantity}</td>
+                    <td>{formatCurrency(item.total)}</td>
+                    <td>{item.employee}</td>
+                    <td>{item.paymentMethod}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {detailedSalesItems.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan="5">Sales item totals</td>
+                    <td>{filteredItemCount}</td>
+                    <td>{formatCurrency(filteredSalesTotal)}</td>
+                    <td colSpan="2"></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+            {detailedSalesItems.length === 0 && <p className="empty-state">No sales items for this period.</p>}
+          </div>
+        </div>
+
+        <div className="report-section">
+          <div className="panel-heading compact-heading">
+            <h3>Detailed Stock Purchases</h3>
+            <p>{filteredPurchases.length} records</p>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Product</th>
+                  <th>Branch</th>
+                  <th>Source</th>
+                  <th>Qty</th>
+                  <th>Price / unit cost</th>
+                  <th>Purchase total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPurchases.map((record) => (
+                  <tr key={record.id}>
+                    <td>{formatDate(record.date)}</td>
+                    <td>{record.productName}</td>
+                    <td>{record.branchName ?? summary.branchName}</td>
+                    <td>{record.source ?? "Stock-in"}</td>
+                    <td>{record.quantity}</td>
+                    <td>{formatCurrency(record.unitCost ?? 0)}</td>
+                    <td>{formatCurrency(record.purchaseTotal ?? 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {filteredPurchases.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan="4">Stock purchase totals</td>
+                    <td>{purchaseQuantityTotal}</td>
+                    <td></td>
+                    <td>{formatCurrency(filteredPurchaseTotal)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+            {filteredPurchases.length === 0 && <p className="empty-state">No stock purchases for this period.</p>}
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <h3>Sales Per Branch</h3>
+          <p>{summary.branchName}</p>
+        </div>
+        <div className="chart-list">
+          {summary.salesByBranch.map((branch) => (
+            <div className="chart-row" key={branch.id}>
+              <span>{branch.name}</span>
+              <div className="bar-track">
+                <div className="bar-fill" style={{ width: `${(branch.total / maxBranchTotal) * 100}%` }} />
+              </div>
+              <strong>{formatCurrency(branch.total)}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <h3>Best-Selling Items</h3>
+          <p>Quantity sold</p>
+        </div>
+        <div className="chart-list">
+          {chartProducts.map(([name, qty]) => (
+            <div className="chart-row" key={name}>
+              <span>{name}</span>
+              <div className="bar-track">
+                <div className="bar-fill" style={{ width: `${(qty / maxProductQty) * 100}%` }} />
+              </div>
+              <strong>{qty}</strong>
+            </div>
+          ))}
+          {chartProducts.length === 0 && <p className="empty-state">No product sales yet.</p>}
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <h3>Low Stock Alerts</h3>
+          <p>5 items or below</p>
+        </div>
+        <div className="product-list">
+          {lowStocks.map((product) => {
+            const count = summary.branchId === "all"
+              ? Object.values(product.stock).reduce((total, value) => total + value, 0)
+              : product.stock[summary.branchId];
+
+            return (
+              <article className="product-row" key={product.id}>
+                <div>
+                  <strong>{product.name}</strong>
+                  <span>{product.category} - {product.sku}</span>
+                </div>
+                <span className="stock-pill warning">{count} left</span>
+              </article>
+            );
+          })}
+          {lowStocks.length === 0 && <p className="empty-state">No low-stock items right now.</p>}
+        </div>
+      </section>
+
+      <section className="report-grid">
+        <article className="report-card">
+          <span>Refund records</span>
+          <strong>{refundRecords.length}</strong>
+          <p>Returned sales recorded</p>
+        </article>
+        <article className="report-card">
+          <span>Stock-in records</span>
+          <strong>{stockHistory.length}</strong>
+          <p>New stock movements saved</p>
+        </article>
+        <article className="report-card">
+          <span>Stock purchases</span>
+          <strong>{formatCurrency(totalPurchases)}</strong>
+          <p>Purchase cost from stock-in</p>
+        </article>
+        <article className="report-card">
+          <span>Revenue total</span>
+          <strong>{formatCurrency(totalRevenue)}</strong>
+          <p>Current branch scope</p>
+        </article>
+        <article className="report-card">
+          <span>Revenue after purchases</span>
+          <strong>{formatCurrency(grossProfit)}</strong>
+          <p>Revenue minus recorded stock purchases</p>
+        </article>
+      </section>
+    </div>
+  );
+}
+
+function getReportRange(period, dateValue) {
+  const selectedDate = parseLocalDate(dateValue);
+
+  if (period === "weekly") {
+    const day = selectedDate.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const start = addDays(selectedDate, mondayOffset);
+    const end = addDays(start, 6);
+
+    return {
+      start: toDateInputValue(start),
+      end: toDateInputValue(end)
+    };
+  }
+
+  if (period === "monthly") {
+    const start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+    const end = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+
+    return {
+      start: toDateInputValue(start),
+      end: toDateInputValue(end)
+    };
+  }
+
+  return {
+    start: dateValue,
+    end: dateValue
+  };
+}
+
+function isWithinRange(dateValue, range) {
+  return dateValue >= range.start && dateValue <= range.end;
+}
+
+function parseLocalDate(dateValue) {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function addDays(dateValue, days) {
+  const nextDate = new Date(dateValue);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function toDateInputValue(dateValue) {
+  const year = dateValue.getFullYear();
+  const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+  const day = String(dateValue.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function capitalize(value) {
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
+}
+
+function createReportDocument({
+  detailedSalesItems,
+  filteredItemCount,
+  filteredPurchaseTotal,
+  filteredPurchases,
+  filteredSales,
+  filteredSalesTotal,
+  purchaseQuantityTotal,
+  reportDateRange,
+  reportTitle,
+  session,
+  summary
+}) {
+  const generatedAt = new Date().toLocaleString("en", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+  const salesRows = detailedSalesItems.length
+    ? detailedSalesItems.map((item) => `
+        <tr>
+          <td>${escapeHtml(formatDate(item.date))}</td>
+          <td>${escapeHtml(item.saleId)}</td>
+          <td>${escapeHtml(item.productName)}</td>
+          <td>${escapeHtml(item.priceType)}</td>
+          <td class="number">${escapeHtml(formatCurrency(item.unitPrice))}</td>
+          <td class="number">${item.quantity}</td>
+          <td class="number">${escapeHtml(formatCurrency(item.total))}</td>
+          <td>${escapeHtml(item.employee)}</td>
+          <td>${escapeHtml(item.paymentMethod)}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="9" class="empty">No sales items for this period.</td></tr>`;
+  const purchaseRows = filteredPurchases.length
+    ? filteredPurchases.map((record) => `
+        <tr>
+          <td>${escapeHtml(formatDate(record.date))}</td>
+          <td>${escapeHtml(record.productName)}</td>
+          <td>${escapeHtml(record.branchName ?? summary.branchName)}</td>
+          <td>${escapeHtml(record.source ?? "Stock-in")}</td>
+          <td class="number">${escapeHtml(String(record.quantity ?? 0))}</td>
+          <td class="number">${escapeHtml(formatCurrency(record.unitCost ?? 0))}</td>
+          <td class="number">${escapeHtml(formatCurrency(record.purchaseTotal ?? 0))}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="7" class="empty">No stock purchases for this period.</td></tr>`;
+
+  return `<!doctype html>
+    <html>
+      <head>
+        <title>Bea n Belle ${escapeHtml(reportTitle)}</title>
+        <style>
+          @page { size: A4; margin: 12mm; }
+          * { box-sizing: border-box; }
+          body {
+            color: #111;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11px;
+            line-height: 1.35;
+            margin: 0;
+          }
+          .report {
+            width: 100%;
+          }
+          .store-header {
+            align-items: start;
+            border-bottom: 2px solid #111;
+            display: grid;
+            gap: 12px;
+            grid-template-columns: 1fr auto;
+            padding-bottom: 10px;
+          }
+          .store-name {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: 0;
+            margin: 0;
+            text-transform: uppercase;
+          }
+          .subtitle {
+            font-size: 13px;
+            font-weight: 700;
+            margin: 3px 0 0;
+            text-transform: uppercase;
+          }
+          .meta {
+            display: grid;
+            gap: 3px;
+            text-align: right;
+          }
+          .meta span {
+            white-space: nowrap;
+          }
+          .summary-grid {
+            display: grid;
+            gap: 8px;
+            grid-template-columns: repeat(4, 1fr);
+            margin: 14px 0;
+          }
+          .summary-box {
+            border: 1px solid #222;
+            min-height: 56px;
+            padding: 8px;
+          }
+          .summary-box span {
+            display: block;
+            font-size: 10px;
+            text-transform: uppercase;
+          }
+          .summary-box strong {
+            display: block;
+            font-size: 15px;
+            margin-top: 5px;
+          }
+          .section-title {
+            background: #111;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 800;
+            margin: 16px 0 0;
+            padding: 6px 8px;
+            text-transform: uppercase;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+          }
+          th,
+          td {
+            border-bottom: 1px solid #cfcfcf;
+            padding: 6px 5px;
+            text-align: left;
+            vertical-align: top;
+          }
+          th {
+            background: #efefef;
+            border-bottom: 1px solid #111;
+            font-size: 9px;
+            text-transform: uppercase;
+          }
+          tfoot td {
+            border-top: 2px solid #111;
+            border-bottom: 0;
+            font-weight: 800;
+          }
+          .number {
+            text-align: right;
+            white-space: nowrap;
+          }
+          .empty {
+            color: #555;
+            font-style: italic;
+            text-align: center;
+          }
+          .signature-grid {
+            display: grid;
+            gap: 34px;
+            grid-template-columns: repeat(3, 1fr);
+            margin-top: 44px;
+          }
+          .signature-line {
+            border-top: 1px solid #111;
+            padding-top: 6px;
+            text-align: center;
+          }
+        </style>
+      </head>
+      <body>
+        <main class="report">
+          <header class="store-header">
+            <div>
+              <h1 class="store-name">Bea n Belle Store System</h1>
+              <p class="subtitle">${escapeHtml(reportTitle)} - Detailed Transaction Report</p>
+              <p>${escapeHtml(summary.branchName)} | ${escapeHtml(reportDateRange)}</p>
+            </div>
+            <div class="meta">
+              <span><strong>Generated:</strong> ${escapeHtml(generatedAt)}</span>
+              <span><strong>Prepared by:</strong> ${escapeHtml(session.userName)}</span>
+              <span><strong>Role:</strong> ${escapeHtml(session.role)}</span>
+            </div>
+          </header>
+
+          <section class="summary-grid">
+            <div class="summary-box">
+              <span>Sales transactions</span>
+              <strong>${filteredSales.length}</strong>
+            </div>
+            <div class="summary-box">
+              <span>Items sold</span>
+              <strong>${filteredItemCount}</strong>
+            </div>
+            <div class="summary-box">
+              <span>Sales total</span>
+              <strong>${escapeHtml(formatCurrency(filteredSalesTotal))}</strong>
+            </div>
+            <div class="summary-box">
+              <span>Stock purchases</span>
+              <strong>${escapeHtml(formatCurrency(filteredPurchaseTotal))}</strong>
+            </div>
+          </section>
+
+          <h2 class="section-title">Detailed Sales Items</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Sale ID</th>
+                <th>Item</th>
+                <th>Type</th>
+                <th class="number">Price</th>
+                <th class="number">Qty</th>
+                <th class="number">Total Price</th>
+                <th>Employee</th>
+                <th>Payment</th>
+              </tr>
+            </thead>
+            <tbody>${salesRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5">Sales item totals</td>
+                <td class="number">${filteredItemCount}</td>
+                <td class="number">${escapeHtml(formatCurrency(filteredSalesTotal))}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <h2 class="section-title">Detailed Stock Purchases</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Product</th>
+                <th>Branch</th>
+                <th>Source</th>
+                <th class="number">Qty</th>
+                <th class="number">Unit Cost</th>
+                <th class="number">Purchase Total</th>
+              </tr>
+            </thead>
+            <tbody>${purchaseRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4">Stock purchase totals</td>
+                <td class="number">${purchaseQuantityTotal}</td>
+                <td></td>
+                <td class="number">${escapeHtml(formatCurrency(filteredPurchaseTotal))}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <section class="signature-grid">
+            <div class="signature-line">Prepared by</div>
+            <div class="signature-line">Checked by</div>
+            <div class="signature-line">Approved by</div>
+          </section>
+        </main>
+      </body>
+    </html>`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
