@@ -36,6 +36,8 @@ const ownerTabs = [
   { id: "users", label: "Users" }
 ];
 
+const allTabIds = [...baseTabs, ...ownerTabs].map((tab) => tab.id);
+
 const emptySummary = {
   branchId: "all",
   branchName: "All Branches",
@@ -54,7 +56,7 @@ const emptySummary = {
 
 export default function App() {
   const [session, setSession] = useState(null);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const [activeTab, setActiveTab] = useState(getTabFromHash());
   const [selectedBranchId, setSelectedBranchId] = useState("all");
   const [branches, setBranches] = useState([]);
   const [summary, setSummary] = useState(emptySummary);
@@ -102,8 +104,17 @@ export default function App() {
   }, [refreshStore]);
 
   useEffect(() => {
+    function handleHashChange() {
+      setActiveTab(getTabFromHash());
+    }
+
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  useEffect(() => {
     if (session?.role === "admin" && branches.length === 0 && !["branches", "users"].includes(activeTab)) {
-      setActiveTab("branches");
+      changeTab("branches");
     }
   }, [activeTab, branches.length, session?.role]);
 
@@ -133,7 +144,7 @@ export default function App() {
 
       setSession(employeeSession);
       setSelectedBranchId(employeeSession.role === "admin" ? "all" : employeeSession.branchId);
-      setActiveTab("dashboard");
+      changeTab("dashboard");
     } catch (error) {
       setLoginError(error.message);
     } finally {
@@ -197,8 +208,9 @@ export default function App() {
         setBranches([]);
         setSummary(emptySummary);
         setUsers([]);
+        changeTab("dashboard");
       }}
-      onTabChange={setActiveTab}
+      onTabChange={changeTab}
     >
       {pageError && <p className="error-message">{pageError}</p>}
       {activeTab === "dashboard" && (
@@ -264,4 +276,19 @@ export default function App() {
       )}
     </DashboardLayout>
   );
+
+  function changeTab(tabId) {
+    const nextTab = allTabIds.includes(tabId) ? tabId : "dashboard";
+
+    setActiveTab(nextTab);
+
+    if (window.location.hash !== `#${nextTab}`) {
+      window.location.hash = nextTab;
+    }
+  }
+}
+
+function getTabFromHash() {
+  const tabId = window.location.hash.replace(/^#/, "");
+  return allTabIds.includes(tabId) ? tabId : "dashboard";
 }
