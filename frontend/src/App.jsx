@@ -112,12 +112,6 @@ export default function App() {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  useEffect(() => {
-    if (session?.role === "admin" && branches.length === 0 && !["branches", "users"].includes(activeTab)) {
-      changeTab("branches");
-    }
-  }, [activeTab, branches.length, session?.role]);
-
   if (!session) {
     return (
       <LoginPage
