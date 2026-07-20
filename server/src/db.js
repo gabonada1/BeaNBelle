@@ -11,7 +11,25 @@ export function getMongoUri() {
 }
 
 export function getDatabaseName() {
-  return process.env.MONGODB_DB_NAME ?? "bea_n_belle";
+  if (process.env.MONGODB_DB_NAME) {
+    return process.env.MONGODB_DB_NAME;
+  }
+
+  const uri = getMongoUri();
+
+  if (uri) {
+    try {
+      const databaseName = new URL(uri).pathname.slice(1);
+
+      if (databaseName) {
+        return databaseName;
+      }
+    } catch {
+      // Fall back to the default below if the URI cannot be parsed as a URL.
+    }
+  }
+
+  return "bea_n_belle";
 }
 
 export async function getClient() {

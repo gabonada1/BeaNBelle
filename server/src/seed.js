@@ -1,7 +1,7 @@
 import { loadEnv } from "./env.js";
 import { getDb } from "./db.js";
 import { hashPassword } from "./auth.js";
-import { starterBranches, starterProducts, starterSales } from "./seedData.js";
+import { starterBranches, starterProducts, starterSales, starterUsers } from "./seedData.js";
 
 loadEnv();
 
@@ -18,6 +18,7 @@ try {
   await insertMany("branches", starterBranches);
   await insertMany("products", starterProducts);
   await insertMany("sales", starterSales);
+  await insertUsers(starterUsers);
   await createOwner();
 } catch (error) {
   console.error("Fresh seed failed.");
@@ -25,7 +26,7 @@ try {
   process.exit(1);
 }
 
-console.log("Fresh seed completed. Branches, products, sales, refunds, and stock history are empty.");
+console.log("Fresh seed completed. Starter branches, products, and users were created.");
 console.log(`Owner login: ${ownerUsername}`);
 console.log(`Owner password: ${ownerPassword}`);
 process.exit(0);
@@ -57,6 +58,23 @@ async function insertMany(collectionName, rows) {
     await collection.insertOne({
       ...row,
       active: row.active ?? true,
+      createdAt: now(),
+      updatedAt: now()
+    });
+  }
+}
+
+async function insertUsers(users) {
+  const collection = db.collection("users");
+
+  for (const user of users) {
+    await collection.insertOne({
+      name: user.name,
+      username: user.username.trim().toLowerCase(),
+      passwordHash: hashPassword(user.password),
+      role: user.role,
+      branchId: user.branchId ?? null,
+      active: user.active ?? true,
       createdAt: now(),
       updatedAt: now()
     });

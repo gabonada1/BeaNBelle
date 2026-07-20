@@ -10,7 +10,7 @@ npm start
 npm run db:seed
 ```
 
-`npm run db:seed` resets the app collections, leaves branches/products/sales empty, and creates a default owner.
+`npm run db:seed` resets the app collections and creates starter branches, products, a sample employee, and a default owner.
 Change the seed owner in `server/.env`:
 
 ```env
@@ -28,6 +28,9 @@ PORT=4000
 NODE_ENV=development
 CLIENT_ORIGIN=http://localhost:5173
 ```
+
+If `MONGODB_DB_NAME` is omitted, the backend now uses the database name from `MONGODB_URI`.
+Set `MONGODB_DB_NAME` only when you want to override that database explicitly.
 
 ## Current Routes
 
