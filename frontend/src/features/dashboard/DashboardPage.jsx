@@ -5,14 +5,17 @@ export function DashboardPage({ branches, session, summary }) {
   const today = new Date().toISOString().slice(0, 10);
   const totalRevenue = summary.totalRevenue ?? summary.totalSales;
   const totalPurchases = summary.totalPurchases ?? 0;
-  const grossProfit = summary.grossProfit ?? totalRevenue - totalPurchases;
+  const totalExpenses = summary.totalExpenses ?? 0;
+  const netRevenue = summary.netRevenue ?? totalRevenue - totalExpenses;
+  const netProfit = summary.netProfit ?? totalRevenue - totalPurchases - totalExpenses;
   const todaysSales = summary.recentSales.filter((sale) => sale.date === today);
   const todaysRevenue = todaysSales.reduce((total, sale) => total + sale.amount, 0);
   const todaysPurchases = summary.stockMovements
     .filter((movement) => movement.date === today)
     .reduce((total, movement) => total + (movement.purchaseTotal ?? 0), 0);
-  const profitPercent = totalRevenue > 0 ? Math.max(0, Math.min(100, (grossProfit / totalRevenue) * 100)) : 0;
+  const profitPercent = totalRevenue > 0 ? Math.max(0, Math.min(100, (netProfit / totalRevenue) * 100)) : 0;
   const purchasePercent = totalRevenue > 0 ? Math.max(0, Math.min(100, (totalPurchases / totalRevenue) * 100)) : 0;
+  const expensePercent = totalRevenue > 0 ? Math.max(0, Math.min(100, (totalExpenses / totalRevenue) * 100)) : 0;
   const maxBranchTotal = Math.max(...summary.salesByBranch.map((branch) => branch.total), 1);
   const lowStocks = summary.inventory
     .map((product) => {
@@ -26,6 +29,7 @@ export function DashboardPage({ branches, session, summary }) {
     .slice(0, 5);
   const recentPurchases = summary.stockMovements.slice(0, 5);
   const recentSales = summary.recentSales.slice(0, 5);
+  const recentExpenses = (summary.expenses ?? summary.recentExpenses ?? []).slice(0, 5);
 
   return (
     <div className="page-grid">
@@ -36,8 +40,8 @@ export function DashboardPage({ branches, session, summary }) {
           <p>Revenue, stock purchases, and current branch activity are ready for review.</p>
         </div>
         <div className="finance-strip">
-          <span>Revenue after purchases</span>
-          <strong>{formatCurrency(grossProfit)}</strong>
+          <span>Revenue after expenses</span>
+          <strong>{formatCurrency(netProfit)}</strong>
         </div>
       </section>
 
@@ -51,8 +55,12 @@ export function DashboardPage({ branches, session, summary }) {
           <strong>{formatCurrency(totalPurchases)}</strong>
         </article>
         <article className="metric-card">
-          <span>Revenue after purchases</span>
-          <strong>{formatCurrency(grossProfit)}</strong>
+          <span>Expenses</span>
+          <strong>{formatCurrency(totalExpenses)}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Revenue after expenses</span>
+          <strong>{formatCurrency(netRevenue)}</strong>
         </article>
         <article className="metric-card">
           <span>Today's revenue</span>
@@ -83,7 +91,7 @@ export function DashboardPage({ branches, session, summary }) {
               <div className="bar-track">
                 <div className="bar-fill success" style={{ width: `${profitPercent}%` }} />
               </div>
-              <strong>{formatCurrency(grossProfit)}</strong>
+              <strong>{formatCurrency(netProfit)}</strong>
             </div>
             <div className="finance-row">
               <span>Stock purchases</span>
@@ -91,6 +99,13 @@ export function DashboardPage({ branches, session, summary }) {
                 <div className="bar-fill warning" style={{ width: `${purchasePercent}%` }} />
               </div>
               <strong>{formatCurrency(totalPurchases)}</strong>
+            </div>
+            <div className="finance-row">
+              <span>Expenses</span>
+              <div className="bar-track">
+                <div className="bar-fill" style={{ width: `${expensePercent}%` }} />
+              </div>
+              <strong>{formatCurrency(totalExpenses)}</strong>
             </div>
           </div>
         </article>
@@ -155,6 +170,25 @@ export function DashboardPage({ branches, session, summary }) {
               </article>
             ))}
             {recentPurchases.length === 0 && <p className="empty-state">No stock purchases recorded yet.</p>}
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Recent Expenses</h3>
+              <p>Salary and bills outflow</p>
+            </div>
+          </div>
+          <div className="history-list">
+            {recentExpenses.map((expense) => (
+              <article className="history-row compact-history" key={expense.id}>
+                <strong>{expense.category} - {expense.name}</strong>
+                <span>{formatDate(expense.date)} - {expense.branchName ?? branches.find((branch) => branch.id === expense.branchId)?.name ?? summary.branchName}</span>
+                <span>{formatCurrency(expense.amount)} - {expense.employee}</span>
+              </article>
+            ))}
+            {recentExpenses.length === 0 && <p className="empty-state">No expenses recorded yet.</p>}
           </div>
         </article>
 

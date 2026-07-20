@@ -1,7 +1,7 @@
 import { loadEnv } from "./env.js";
 import { getDb } from "./db.js";
 import { hashPassword } from "./auth.js";
-import { starterBranches, starterProducts, starterSales, starterUsers } from "./seedData.js";
+import { starterBranches, starterExpenses, starterProducts, starterSales, starterUsers } from "./seedData.js";
 
 loadEnv();
 
@@ -18,6 +18,7 @@ try {
   await insertMany("branches", starterBranches);
   await insertMany("products", starterProducts);
   await insertMany("sales", starterSales);
+  await insertMany("expenses", starterExpenses);
   await insertUsers(starterUsers);
   await createOwner();
 } catch (error) {
@@ -40,6 +41,7 @@ async function freshCollections() {
     "branches",
     "products",
     "sales",
+    "expenses",
     "refunds",
     "stockMovements",
     "users",
@@ -99,5 +101,6 @@ async function createIndexes() {
   await db.collection("users").createIndex({ username: 1 }, { unique: true });
   await db.collection("products").createIndex({ id: 1 }, { unique: true });
   await db.collection("sales").createIndex({ id: 1 }, { unique: true });
+  await db.collection("expenses").createIndex({ id: 1 }, { unique: true });
   await db.collection("refunds").createIndex({ id: 1 }, { unique: true });
 }

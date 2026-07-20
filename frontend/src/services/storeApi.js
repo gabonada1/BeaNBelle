@@ -65,3 +65,11 @@ export function createRefund(token, refund) {
     body: JSON.stringify(refund)
   });
 }
+
+export function createExpense(token, expense) {
+  return apiRequest("/expenses", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(expense)
+  });
+}

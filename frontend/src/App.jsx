@@ -8,10 +8,12 @@ import { StockPage } from "./features/stocks/StockPage.jsx";
 import { ReportsPage } from "./features/reports/ReportsPage.jsx";
 import { ReturnsPage } from "./features/returns/ReturnsPage.jsx";
 import { BranchesPage } from "./features/branches/BranchesPage.jsx";
+import { ExpensesPage } from "./features/expenses/ExpensesPage.jsx";
 import { UsersPage } from "./features/users/UsersPage.jsx";
 import { loginUser } from "./services/authApi.js";
 import {
   createBranch,
+  createExpense,
   createProduct,
   createRefund,
   createSale,
@@ -32,6 +34,7 @@ const baseTabs = [
 ];
 
 const ownerTabs = [
+  { id: "expenses", label: "Expenses" },
   { id: "branches", label: "Branches" },
   { id: "users", label: "Users" }
 ];
@@ -47,15 +50,20 @@ const emptySummary = {
   stockMovements: [],
   salesByBranch: [],
   totalItems: 0,
+  totalExpenses: 0,
   totalPurchases: 0,
   totalRevenue: 0,
   totalSales: 0,
+  netProfit: 0,
+  netRevenue: 0,
   totalStock: 0,
-  grossProfit: 0
+  grossProfit: 0,
+  expenses: [],
+  recentExpenses: []
 };
 
 export default function App() {
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(loadSessionFromStorage);
   const [activeTab, setActiveTab] = useState(getTabFromHash());
   const [selectedBranchId, setSelectedBranchId] = useState("all");
   const [branches, setBranches] = useState([]);
@@ -102,6 +110,14 @@ export default function App() {
   useEffect(() => {
     refreshStore();
   }, [refreshStore]);
+
+  useEffect(() => {
+    if (session) {
+      window.localStorage.setItem("bea-n-belle-session", JSON.stringify(session));
+    } else {
+      window.localStorage.removeItem("bea-n-belle-session");
+    }
+  }, [session]);
 
   useEffect(() => {
     function handleHashChange() {
@@ -183,6 +199,11 @@ export default function App() {
     await refreshStore(selectedBranchId);
   }
 
+  async function handleAddExpense(expense) {
+    await createExpense(session.token, expense);
+    await refreshStore(selectedBranchId);
+  }
+
   async function handleAddUser(user) {
     await createUser(session.token, user);
     await loadUsers();
@@ -218,6 +239,7 @@ export default function App() {
         <SalesDashboard
           session={session}
           summary={summary}
+          selectedBranchId={selectedBranchId}
           lastReceipt={lastReceipt}
           onRecordSale={handleRecordSale}
         />
@@ -257,6 +279,15 @@ export default function App() {
           summary={summary}
         />
       )}
+      {activeTab === "expenses" && (
+        <ExpensesPage
+          branches={branches}
+          selectedBranchId={selectedBranchId}
+          session={session}
+          summary={summary}
+          onAddExpense={handleAddExpense}
+        />
+      )}
       {activeTab === "branches" && (
         <BranchesPage branches={branches} onAddBranch={handleAddBranch} />
       )}
@@ -279,6 +310,16 @@ export default function App() {
     if (window.location.hash !== `#${nextTab}`) {
       window.location.hash = nextTab;
     }
+  }
+}
+
+function loadSessionFromStorage() {
+  try {
+    const storedSession = window.localStorage.getItem("bea-n-belle-session");
+
+    return storedSession ? JSON.parse(storedSession) : null;
+  } catch {
+    return null;
   }
 }
 

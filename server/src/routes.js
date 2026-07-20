@@ -49,6 +49,10 @@ export async function handleApiRoute(request, url, context) {
     return handleRefunds(request, context);
   }
 
+  if (parts[1] === "expenses") {
+    return handleExpenses(request, url, context);
+  }
+
   if (parts[1] === "reports" && parts[2] === "summary") {
     return getReportSummary(url, context);
   }
@@ -372,8 +376,12 @@ async function handleSales(request, parts, context) {
     requireFields(body, ["lineItems"]);
     const branchId = context.user.role === "owner" ? body.branchId : context.user.branchId;
     requireFields({ branchId }, ["branchId"]);
+    const saleType = normalizeSaleType(body.saleType);
 
-    const lineItems = Array.isArray(body.lineItems) ? body.lineItems : [];
+    const lineItems = (Array.isArray(body.lineItems) ? body.lineItems : []).map((item) => ({
+      ...item,
+      saleType: normalizeSaleType(item.saleType ?? saleType)
+    }));
     if (!lineItems.length) return { status: 400, body: { error: "Sale must include at least one line item." } };
 
     const client = await getClient();
@@ -412,6 +420,7 @@ async function handleSales(request, parts, context) {
           employee: context.user.name,
           employeeId: context.user._id,
           items,
+          saleType,
           lineItems,
           paymentMethod: body.paymentMethod || "Cash",
           productName: lineItems.map((item) => item.productName).join(", "),
@@ -479,6 +488,52 @@ async function handleRefunds(request, context) {
   return methodNotAllowed();
 }
 
+async function handleExpenses(request, url, context) {
+  const db = await getDb();
+  const ownerError = requireOwner(context);
+  if (ownerError) return ownerError;
+
+  if (request.method === "GET") {
+    const requestedBranchId = url.searchParams.get("branchId") ?? "all";
+    const filter = requestedBranchId === "all" ? {} : { branchId: requestedBranchId };
+    const expenses = await db.collection("expenses").find(filter).sort({ createdAt: -1, date: -1 }).toArray();
+    return { status: 200, body: { expenses: expenses.map(serializeExpense) } };
+  }
+
+  if (request.method === "POST") {
+    const body = await readJson(request);
+    requireFields(body, ["amount", "branchId", "category", "name"]);
+
+    const amount = toNumber(body.amount);
+    if (amount <= 0) {
+      return { status: 400, body: { error: "Expense amount must be greater than zero." } };
+    }
+
+    const branch = await db.collection("branches").findOne({ id: body.branchId, active: { $ne: false } });
+    if (!branch) {
+      return { status: 400, body: { error: "Assigned branch does not exist." } };
+    }
+
+    const expense = {
+      id: body.id || makeId("EX"),
+      amount,
+      branchId: branch.id,
+      branchName: branch.name,
+      category: body.category.trim(),
+      date: body.date || new Date().toISOString().slice(0, 10),
+      employee: context.user.name,
+      name: body.name.trim(),
+      note: body.note?.trim() || "",
+      createdAt: new Date()
+    };
+
+    await db.collection("expenses").insertOne(expense);
+    return { status: 201, body: { expense: serializeExpense(expense) } };
+  }
+
+  return methodNotAllowed();
+}
+
 async function getReportSummary(url, context) {
   const db = await getDb();
   const authError = requireUser(context);
@@ -492,6 +547,7 @@ async function getReportSummary(url, context) {
   const sales = await db.collection("sales").find(saleFilter).sort({ createdAt: -1, date: -1 }).toArray();
   const refunds = await db.collection("refunds").find(saleFilter).sort({ createdAt: -1 }).toArray();
   const stockMovements = await db.collection("stockMovements").find(saleFilter).sort({ createdAt: -1 }).toArray();
+  const expenses = await db.collection("expenses").find(saleFilter).sort({ createdAt: -1, date: -1 }).toArray();
   const branchIds = branchId === "all" ? branches.map((branch) => branch.id) : [branchId];
   const totalSales = sales.reduce((total, sale) => total + toNumber(sale.amount), 0);
   const totalItems = sales.reduce((total, sale) => total + toNumber(sale.items), 0);
@@ -499,10 +555,12 @@ async function getReportSummary(url, context) {
     const fallbackTotal = toNumber(movement.unitCost) * toNumber(movement.quantity);
     return total + toNumber(movement.purchaseTotal, fallbackTotal);
   }, 0);
+  const totalExpenses = expenses.reduce((total, expense) => total + toNumber(expense.amount), 0);
   const totalStock = products.reduce(
     (total, product) => total + branchIds.reduce((sum, id) => sum + toNumber(product.stock?.[id]), 0),
     0
   );
+  const netProfit = totalSales - totalPurchases - totalExpenses;
   const salesByBranch = branches.map((branch) => {
     const branchRows = sales.filter((sale) => sale.branchId === branch.id);
     return {
@@ -520,15 +578,20 @@ async function getReportSummary(url, context) {
         branchName: branchId === "all" ? "All Branches" : branches.find((branch) => branch.id === branchId)?.name,
         inventory: products.map(serializeProduct),
         recentSales: sales.map(serializeSale),
+        recentExpenses: expenses.map(serializeExpense),
+        expenses: expenses.map(serializeExpense),
         refunds: refunds.map(serializeRefund),
         stockMovements: stockMovements.map(serializeMovement),
         salesByBranch,
         totalItems,
+        totalExpenses,
         totalPurchases,
         totalRevenue: totalSales,
         totalSales,
         totalStock,
-        grossProfit: totalSales - totalPurchases
+        grossProfit: netProfit,
+        netProfit,
+        netRevenue: totalSales - totalExpenses
       }
     }
   };
@@ -580,10 +643,26 @@ function serializeSale(sale) {
     date: sale.date,
     employee: sale.employee,
     items: sale.items,
+    saleType: sale.saleType ?? null,
     lineItems: sale.lineItems ?? [],
     paymentMethod: sale.paymentMethod,
     productName: sale.productName,
     createdAt: sale.createdAt
+  };
+}
+
+function serializeExpense(expense) {
+  return {
+    id: expense.id,
+    amount: expense.amount,
+    branchId: expense.branchId,
+    branchName: expense.branchName ?? null,
+    category: expense.category,
+    date: expense.date,
+    employee: expense.employee,
+    name: expense.name,
+    note: expense.note ?? "",
+    createdAt: expense.createdAt
   };
 }
 
@@ -639,4 +718,9 @@ function methodNotAllowed() {
     status: 405,
     body: { error: "Method not allowed." }
   };
+}
+
+function normalizeSaleType(value) {
+  const saleType = String(value ?? "").trim();
+  return saleType || undefined;
 }

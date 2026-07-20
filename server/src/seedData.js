@@ -72,3 +72,5 @@ export const starterUsers = [
 ];
 
 export const starterSales = [];
+
+export const starterExpenses = [];

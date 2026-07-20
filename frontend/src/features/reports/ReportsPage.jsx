@@ -9,7 +9,8 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
   const todaysTotal = todaysSales.reduce((total, sale) => total + sale.amount, 0);
   const totalRevenue = summary.totalRevenue ?? summary.totalSales;
   const totalPurchases = summary.totalPurchases ?? stockHistory.reduce((total, record) => total + (record.purchaseTotal ?? 0), 0);
-  const grossProfit = summary.grossProfit ?? totalRevenue - totalPurchases;
+  const totalExpenses = summary.totalExpenses ?? 0;
+  const netProfit = summary.netProfit ?? totalRevenue - totalPurchases - totalExpenses;
   const employeeSales = summary.recentSales.filter((sale) => sale.employee === session.userName);
   const productTotals = summary.recentSales.reduce((result, sale) => {
     (sale.lineItems ?? []).forEach((item) => {
@@ -31,6 +32,7 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
   const reportRange = useMemo(() => getReportRange(reportPeriod, reportDate), [reportDate, reportPeriod]);
   const filteredSales = summary.recentSales.filter((sale) => isWithinRange(sale.date, reportRange));
   const filteredPurchases = stockHistory.filter((record) => isWithinRange(record.date, reportRange));
+  const filteredExpenses = (summary.expenses ?? summary.recentExpenses ?? []).filter((expense) => isWithinRange(expense.date, reportRange));
   const detailedSalesItems = filteredSales.flatMap((sale) => {
     const lineItems = sale.lineItems?.length
       ? sale.lineItems
@@ -49,6 +51,7 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
       employee: sale.employee ?? "Branch Staff",
       paymentMethod: sale.paymentMethod ?? "Cash",
       priceType: item.priceType === "reseller" ? "Reseller" : "Retail",
+      saleType: item.saleType ?? sale.saleType ?? null,
       productName: item.productName,
       quantity: Number(item.quantity ?? 0),
       total: Number(item.total ?? 0),
@@ -57,6 +60,7 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
   });
   const filteredSalesTotal = filteredSales.reduce((total, sale) => total + (sale.amount ?? 0), 0);
   const filteredPurchaseTotal = filteredPurchases.reduce((total, record) => total + (record.purchaseTotal ?? 0), 0);
+  const filteredExpenseTotal = filteredExpenses.reduce((total, expense) => total + (expense.amount ?? 0), 0);
   const filteredItemCount = filteredSales.reduce((total, sale) => total + (sale.items ?? 0), 0);
   const purchaseQuantityTotal = filteredPurchases.reduce((total, record) => total + Number(record.quantity ?? 0), 0);
   const reportTitle = `${capitalize(reportPeriod)} report`;
@@ -75,6 +79,8 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
     printWindow.document.write(createReportDocument({
       detailedSalesItems,
       filteredItemCount,
+      filteredExpenseTotal,
+      filteredExpenses,
       filteredPurchaseTotal,
       filteredPurchases,
       filteredSales,
@@ -106,8 +112,12 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
           <strong>{formatCurrency(totalPurchases)}</strong>
         </article>
         <article className="metric-card">
-          <span>Revenue after purchases</span>
-          <strong>{formatCurrency(grossProfit)}</strong>
+          <span>Expenses</span>
+          <strong>{formatCurrency(totalExpenses)}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Revenue after expenses</span>
+          <strong>{formatCurrency(netProfit)}</strong>
         </article>
         <article className="metric-card">
           <span>Transactions today</span>
@@ -141,6 +151,7 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
             </select>
           </label>
           <label className="field">
@@ -167,6 +178,11 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
             <p>{filteredPurchases.length} stock-in records</p>
           </article>
           <article className="report-card">
+            <span>Expenses</span>
+            <strong>{formatCurrency(filteredExpenseTotal)}</strong>
+            <p>{filteredExpenses.length} expense records</p>
+          </article>
+          <article className="report-card">
             <span>Items sold</span>
             <strong>{filteredItemCount}</strong>
             <p>Selected {reportPeriod} period</p>
@@ -186,6 +202,7 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
                   <th>Sale ID</th>
                   <th>Item</th>
                   <th>Price type</th>
+                  <th>Tag</th>
                   <th>Price</th>
                   <th>Qty</th>
                   <th>Total price</th>
@@ -196,10 +213,15 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
               <tbody>
                 {detailedSalesItems.map((item) => (
                   <tr key={item.id}>
-                    <td>{formatDate(item.date)}</td>
+                    <td>
+                      <button className="text-button date-link" onClick={() => { setReportPeriod("daily"); setReportDate(item.date); }} type="button">
+                        {formatDate(item.date)}
+                      </button>
+                    </td>
                     <td>{item.saleId}</td>
                     <td>{item.productName}</td>
                     <td>{item.priceType}</td>
+                    <td>{item.saleType ?? "-"}</td>
                     <td>{formatCurrency(item.unitPrice)}</td>
                     <td>{item.quantity}</td>
                     <td>{formatCurrency(item.total)}</td>
@@ -211,7 +233,7 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
               {detailedSalesItems.length > 0 && (
                 <tfoot>
                   <tr>
-                    <td colSpan="5">Sales item totals</td>
+                    <td colSpan="6">Sales item totals</td>
                     <td>{filteredItemCount}</td>
                     <td>{formatCurrency(filteredSalesTotal)}</td>
                     <td colSpan="2"></td>
@@ -220,6 +242,46 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
               )}
             </table>
             {detailedSalesItems.length === 0 && <p className="empty-state">No sales items for this period.</p>}
+          </div>
+        </div>
+
+        <div className="report-section">
+          <div className="panel-heading compact-heading">
+            <h3>Detailed Expenses</h3>
+            <p>{filteredExpenses.length} records</p>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Detail</th>
+                  <th>Branch</th>
+                  <th>Amount</th>
+                  <th>Employee</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredExpenses.map((expense) => (
+                  <tr key={expense.id}>
+                    <td>
+                      <button className="text-button date-link" onClick={() => { setReportPeriod("daily"); setReportDate(expense.date); }} type="button">
+                        {formatDate(expense.date)}
+                      </button>
+                    </td>
+                    <td>{expense.category}</td>
+                    <td>{expense.name}</td>
+                    <td>{expense.branchName ?? summary.branchName}</td>
+                    <td>{formatCurrency(expense.amount)}</td>
+                    <td>{expense.employee}</td>
+                    <td>{expense.note || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredExpenses.length === 0 && <p className="empty-state">No expenses for this period.</p>}
           </div>
         </div>
 
@@ -349,14 +411,19 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
           <p>Purchase cost from stock-in</p>
         </article>
         <article className="report-card">
+          <span>Expenses</span>
+          <strong>{formatCurrency(totalExpenses)}</strong>
+          <p>Salary and bills recorded</p>
+        </article>
+        <article className="report-card">
           <span>Revenue total</span>
           <strong>{formatCurrency(totalRevenue)}</strong>
           <p>Current branch scope</p>
         </article>
         <article className="report-card">
-          <span>Revenue after purchases</span>
-          <strong>{formatCurrency(grossProfit)}</strong>
-          <p>Revenue minus recorded stock purchases</p>
+          <span>Revenue after expenses</span>
+          <strong>{formatCurrency(netProfit)}</strong>
+          <p>Revenue minus stock purchases and expenses</p>
         </article>
       </section>
     </div>
@@ -381,6 +448,16 @@ function getReportRange(period, dateValue) {
   if (period === "monthly") {
     const start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
     const end = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+
+    return {
+      start: toDateInputValue(start),
+      end: toDateInputValue(end)
+    };
+  }
+
+  if (period === "yearly") {
+    const start = new Date(selectedDate.getFullYear(), 0, 1);
+    const end = new Date(selectedDate.getFullYear(), 11, 31);
 
     return {
       start: toDateInputValue(start),
@@ -424,6 +501,8 @@ function capitalize(value) {
 function createReportDocument({
   detailedSalesItems,
   filteredItemCount,
+  filteredExpenseTotal,
+  filteredExpenses,
   filteredPurchaseTotal,
   filteredPurchases,
   filteredSales,
@@ -445,6 +524,7 @@ function createReportDocument({
           <td>${escapeHtml(item.saleId)}</td>
           <td>${escapeHtml(item.productName)}</td>
           <td>${escapeHtml(item.priceType)}</td>
+          <td>${escapeHtml(item.saleType ?? "-")}</td>
           <td class="number">${escapeHtml(formatCurrency(item.unitPrice))}</td>
           <td class="number">${item.quantity}</td>
           <td class="number">${escapeHtml(formatCurrency(item.total))}</td>
@@ -452,7 +532,20 @@ function createReportDocument({
           <td>${escapeHtml(item.paymentMethod)}</td>
         </tr>
       `).join("")
-    : `<tr><td colspan="9" class="empty">No sales items for this period.</td></tr>`;
+    : `<tr><td colspan="10" class="empty">No sales items for this period.</td></tr>`;
+  const expenseRows = filteredExpenses.length
+    ? filteredExpenses.map((expense) => `
+        <tr>
+          <td>${escapeHtml(formatDate(expense.date))}</td>
+          <td>${escapeHtml(expense.category)}</td>
+          <td>${escapeHtml(expense.name)}</td>
+          <td>${escapeHtml(expense.branchName ?? summary.branchName)}</td>
+          <td class="number">${escapeHtml(formatCurrency(expense.amount ?? 0))}</td>
+          <td>${escapeHtml(expense.employee ?? session.userName)}</td>
+          <td>${escapeHtml(expense.note ?? "-")}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="7" class="empty">No expenses for this period.</td></tr>`;
   const purchaseRows = filteredPurchases.length
     ? filteredPurchases.map((record) => `
         <tr>
@@ -619,6 +712,10 @@ function createReportDocument({
               <span>Stock purchases</span>
               <strong>${escapeHtml(formatCurrency(filteredPurchaseTotal))}</strong>
             </div>
+            <div class="summary-box">
+              <span>Expenses</span>
+              <strong>${escapeHtml(formatCurrency(filteredExpenseTotal))}</strong>
+            </div>
           </section>
 
           <h2 class="section-title">Detailed Sales Items</h2>
@@ -629,6 +726,7 @@ function createReportDocument({
                 <th>Sale ID</th>
                 <th>Item</th>
                 <th>Type</th>
+                <th>Tag</th>
                 <th class="number">Price</th>
                 <th class="number">Qty</th>
                 <th class="number">Total Price</th>
@@ -639,9 +737,32 @@ function createReportDocument({
             <tbody>${salesRows}</tbody>
             <tfoot>
               <tr>
-                <td colspan="5">Sales item totals</td>
+                <td colspan="6">Sales item totals</td>
                 <td class="number">${filteredItemCount}</td>
                 <td class="number">${escapeHtml(formatCurrency(filteredSalesTotal))}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <h2 class="section-title">Detailed Expenses</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Detail</th>
+                <th>Branch</th>
+                <th class="number">Amount</th>
+                <th>Employee</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>${expenseRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4">Expense totals</td>
+                <td class="number">${escapeHtml(formatCurrency(filteredExpenseTotal))}</td>
                 <td colspan="2"></td>
               </tr>
             </tfoot>

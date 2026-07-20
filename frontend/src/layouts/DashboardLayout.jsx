@@ -22,7 +22,7 @@ export function DashboardLayout({
           <div className="brand-mark">BB</div>
           <div>
             <p className="eyebrow">Bea n Belle</p>
-            <h1>Command Center</h1>
+            <h1>Store Desk</h1>
           </div>
         </div>
 
@@ -42,8 +42,17 @@ export function DashboardLayout({
           ))}
         </nav>
 
+        <section className="sidebar-guide" aria-label="How to use this app">
+          <p className="eyebrow">Quick guide</p>
+          <ol>
+            <li>Pick the right branch.</li>
+            <li>Choose the task you need.</li>
+            <li>Fill the form and save.</li>
+          </ol>
+        </section>
+
         <div className="user-box">
-          <span>{session.role === "admin" ? "Owner/Admin - All branches" : `Employee - ${session.branchName}`}</span>
+          <span>{session.role === "admin" ? "Owner access - all branches" : `Employee - ${session.branchName}`}</span>
           <strong>{session.userName}</strong>
           <button className="ghost-button" onClick={onLogout} type="button">
             Log out
@@ -53,41 +62,47 @@ export function DashboardLayout({
 
       <main className="content">
         <header className="topbar">
-          <div>
+          <div className="topbar-copy-block">
             <p className="eyebrow">{activeTabInfo.eyebrow}</p>
             <h2>{activeTabInfo.title}</h2>
             <p className="topbar-copy">{activeTabInfo.description}</p>
           </div>
-          <div className="session-chip" title={session.userName}>
-            <span aria-hidden="true">{session.userName.slice(0, 1).toUpperCase()}</span>
-            <div>
-              <strong>{session.userName}</strong>
-              <small>{session.role === "admin" ? "Owner access" : session.branchName}</small>
+          <label className="topbar-search field" aria-label="Search">
+            <span className="sr-only">Search</span>
+            <input placeholder="Search (Ctrl+/)" type="search" />
+          </label>
+          <div className="topbar-actions">
+            <div className="session-chip" title={session.userName}>
+              <span aria-hidden="true">{session.userName.slice(0, 1).toUpperCase()}</span>
+              <div>
+                <strong>{session.userName}</strong>
+                <small>{session.role === "admin" ? "Owner access" : session.branchName}</small>
+              </div>
             </div>
+            {["branches", "users"].includes(activeTab) ? (
+              <div className="scope-pill">
+                <span>{totalBranches}</span>
+                branches
+              </div>
+            ) : (
+              <label className="field compact-field">
+                <span>Branch filter</span>
+                <select
+                  value={selectedBranchId}
+                  onChange={(event) => onBranchChange(event.target.value)}
+                  disabled={session.role !== "admin" || branches.length === 0}
+                >
+                  {session.role === "admin" && <option value="all">All branches</option>}
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+                <small>{branches.length ? selectedBranchName ?? "All branch data" : "Create a branch to begin"}</small>
+              </label>
+            )}
           </div>
-          {["branches", "users"].includes(activeTab) ? (
-            <div className="scope-pill">
-              <span>{totalBranches}</span>
-              branches
-            </div>
-          ) : (
-            <label className="field compact-field">
-              <span>Branch filter</span>
-              <select
-                value={selectedBranchId}
-                onChange={(event) => onBranchChange(event.target.value)}
-                disabled={session.role !== "admin" || branches.length === 0}
-              >
-                {session.role === "admin" && <option value="all">All branches</option>}
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-              <small>{branches.length ? selectedBranchName ?? "All branch data" : "Create a branch to begin"}</small>
-            </label>
-          )}
         </header>
         {children}
       </main>
@@ -103,6 +118,7 @@ function getTabIcon(tabId) {
     inventory: "IN",
     returns: "RT",
     reports: "RP",
+    expenses: "EX",
     branches: "BR",
     users: "US"
   };
@@ -141,6 +157,11 @@ function getTabInfo(tabId) {
       eyebrow: "Business overview",
       title: "Reports",
       description: "View totals, best-selling items, low stock, and branch performance."
+    },
+    expenses: {
+      eyebrow: "Business outflow",
+      title: "Expenses",
+      description: "Record salary and bills, then review how they affect revenue and profit."
     },
     branches: {
       eyebrow: "Owner setup",
