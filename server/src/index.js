@@ -1,4 +1,3 @@
-import { createServer } from "node:http";
 import { checkMongoConnection } from "./db.js";
 import { loadEnv } from "./env.js";
 import { getUserFromRequest } from "./auth.js";
@@ -7,25 +6,47 @@ import { sendJson } from "./http.js";
 
 loadEnv();
 
-const port = Number(process.env.PORT ?? 4000);
-const clientOrigin = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
 let mongoStatus = {
   connected: false,
   message: "MongoDB has not been checked yet."
 };
 
-const server = createServer(async (request, response) => {
-  const url = new URL(request.url ?? "/", `http://${request.headers.host}`);
+// Check DB connection lazily on cold start
+let dbCheckPromise = null;
+async function ensureDbConnected() {
+  if (!dbCheckPromise) {
+    dbCheckPromise = checkMongoConnection(process.env.MONGODB_URI)
+      .then((status) => {
+        mongoStatus = status;
+      })
+      .catch((err) => {
+        mongoStatus = { connected: false, message: err.message };
+      });
+  }
+  await dbCheckPromise;
+}
 
-  setCorsHeaders(response);
+// 1. MAIN EXPORTED HANDLER FOR VERCEL
+export default async function handler(request, response) {
+  // Ensure CORS headers are attached to EVERY response (including preflight and errors)
+  setCorsHeaders(request, response);
 
+  // Handle browser CORS preflight (OPTIONS) requests immediately
   if (request.method === "OPTIONS") {
     response.writeHead(204);
     response.end();
     return;
   }
 
+  // Ensure DB check finishes on serverless cold-start
+  await ensureDbConnected();
+
+  const host = request.headers.host || "localhost";
+  const protocol = request.headers["x-forwarded-proto"] || "http";
+  const url = new URL(request.url ?? "/", `${protocol}://${host}`);
+
   try {
+    // Health check endpoint
     if (request.method === "GET" && url.pathname === "/api/health") {
       sendJson(response, 200, {
         ok: true,
@@ -36,14 +57,16 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    // Config endpoint
     if (request.method === "GET" && url.pathname === "/api/config") {
       sendJson(response, 200, {
-        clientOrigin,
+        clientOrigin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
         apiBasePath: "/api"
       });
       return;
     }
 
+    // Authenticate and route requests
     const user = await getUserFromRequest(request);
     const result = await handleApiRoute(request, url, { user });
 
@@ -52,30 +75,39 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    // Route not matched
     sendJson(response, 404, {
-      error: "Route not found"
+      error: `Route not found: ${request.method} ${url.pathname}`
     });
   } catch (error) {
+    console.error("Unhandled Server Error:", error);
     sendJson(response, error.status ?? 500, {
       error: error.message || "Server error."
     });
   }
-});
+}
 
-server.listen(port, async () => {
-  console.log(`Backend API running at http://localhost:${port}`);
-  mongoStatus = await checkMongoConnection(process.env.MONGODB_URI);
+// 2. DYNAMIC CORS HEADER HELPER
+function setCorsHeaders(request, response) {
+  const origin = request.headers.origin;
+  const configuredOrigin = process.env.CLIENT_ORIGIN;
 
-  if (mongoStatus.connected) {
-    console.log("MongoDB status: connected");
-  } else {
-    console.log("MongoDB status: not connected");
-    console.log(`MongoDB reason: ${mongoStatus.message}`);
-  }
-});
+  // Allow configured origin, or dynamically reflect request origin for dev/previews
+  const allowedOrigin = configuredOrigin || origin || "*";
 
-function setCorsHeaders(response) {
-  response.setHeader("Access-Control-Allow-Origin", clientOrigin);
-  response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+  response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  response.setHeader("Access-Control-Allow-Credentials", "true");
+}
+
+// 3. LOCAL DEVELOPMENT ONLY (Run with: node server/src/index.js)
+if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+  import("node:http").then(({ createServer }) => {
+    const port = Number(process.env.PORT ?? 4000);
+    const server = createServer(handler);
+    server.listen(port, () => {
+      console.log(`Backend API running locally at http://localhost:${port}`);
+    });
+  });
 }
