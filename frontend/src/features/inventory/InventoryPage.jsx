@@ -40,12 +40,9 @@ export function InventoryPage({
   const [productForm, setProductForm] = useState({
     branchId: session.role === "admin" ? branches[0]?.id : session.branchId,
     category: "Dresses",
-    costPrice: "",
     name: "",
     resellerPrice: "",
-    retailPrice: "",
-    sku: "",
-    startingStock: ""
+    retailPrice: ""
   });
   const [message, setMessage] = useState("");
   const [transferMessage, setTransferMessage] = useState("");
@@ -190,12 +187,9 @@ export function InventoryPage({
     });
     setProductForm((current) => ({
       ...current,
-      costPrice: "",
       name: "",
       resellerPrice: "",
-      retailPrice: "",
-      sku: "",
-      startingStock: ""
+      retailPrice: ""
     }));
     setMessage("New product added.");
   }
@@ -305,7 +299,7 @@ export function InventoryPage({
       <section className="panel">
         <div className="panel-heading">
           <h3>Product Management</h3>
-          <p>Add products with retail, reseller, purchase cost, and starting stock</p>
+          <p>Add products with retail and reseller prices</p>
         </div>
         <form className="product-form" onSubmit={handleAddProduct}>
           <label className="field">
@@ -323,18 +317,6 @@ export function InventoryPage({
           <label className="field">
             <span>Reseller price</span>
             <input min="0" type="number" value={productForm.resellerPrice} onChange={(event) => setProductForm({ ...productForm, resellerPrice: event.target.value })} />
-          </label>
-          <label className="field">
-            <span>Purchase cost</span>
-            <input min="0" type="number" value={productForm.costPrice} onChange={(event) => setProductForm({ ...productForm, costPrice: event.target.value })} />
-          </label>
-          <label className="field">
-            <span>SKU / Barcode</span>
-            <input value={productForm.sku} onChange={(event) => setProductForm({ ...productForm, sku: event.target.value })} />
-          </label>
-          <label className="field">
-            <span>Starting stock</span>
-            <input min="0" type="number" value={productForm.startingStock} onChange={(event) => setProductForm({ ...productForm, startingStock: event.target.value })} />
           </label>
           <label className="field">
             <span>Starting branch</span>
