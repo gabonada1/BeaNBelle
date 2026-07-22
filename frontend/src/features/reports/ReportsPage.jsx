@@ -31,8 +31,24 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
   const maxProductQty = Math.max(...chartProducts.map(([, qty]) => qty), 1);
   const reportRange = useMemo(() => getReportRange(reportPeriod, reportDate), [reportDate, reportPeriod]);
   const filteredSales = summary.recentSales.filter((sale) => isWithinRange(sale.date, reportRange));
-  const filteredPurchases = stockHistory.filter((record) => isWithinRange(record.date, reportRange));
+  const filteredStockMovements = stockHistory.filter((record) => isWithinRange(record.date, reportRange));
+  const filteredPurchases = filteredStockMovements.filter((record) => record.type !== "transfer");
+  const filteredTransfers = filteredStockMovements.filter((record) => record.type === "transfer");
+  const filteredRefunds = refundRecords.filter((refund) => isWithinRange(refund.date, reportRange));
   const filteredExpenses = (summary.expenses ?? summary.recentExpenses ?? []).filter((expense) => isWithinRange(expense.date, reportRange));
+  const inventoryRows = summary.inventory.map((product) => {
+    const stockCount = summary.branchId === "all"
+      ? Object.values(product.stock ?? {}).reduce((total, value) => total + Number(value ?? 0), 0)
+      : Number(product.stock?.[summary.branchId] ?? 0);
+    const retailPrice = Number(product.retailPrice ?? product.price ?? 0);
+
+    return {
+      ...product,
+      retailPrice,
+      stockCount,
+      stockValue: stockCount * retailPrice
+    };
+  });
   const detailedSalesItems = filteredSales.flatMap((sale) => {
     const lineItems = sale.lineItems?.length
       ? sale.lineItems
@@ -59,10 +75,17 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
     }));
   });
   const filteredSalesTotal = filteredSales.reduce((total, sale) => total + (sale.amount ?? 0), 0);
+  const filteredRefundTotal = filteredRefunds.reduce((total, refund) => total + (refund.amount ?? 0), 0);
   const filteredPurchaseTotal = filteredPurchases.reduce((total, record) => total + (record.purchaseTotal ?? 0), 0);
   const filteredExpenseTotal = filteredExpenses.reduce((total, expense) => total + (expense.amount ?? 0), 0);
   const filteredItemCount = filteredSales.reduce((total, sale) => total + (sale.items ?? 0), 0);
+  const refundedItemCount = filteredRefunds.reduce((total, refund) => (
+    total + (refund.lineItems ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0)
+  ), 0);
   const purchaseQuantityTotal = filteredPurchases.reduce((total, record) => total + Number(record.quantity ?? 0), 0);
+  const stockMovementQuantityTotal = filteredStockMovements.reduce((total, record) => total + Number(record.quantity ?? 0), 0);
+  const inventoryStockTotal = inventoryRows.reduce((total, product) => total + product.stockCount, 0);
+  const inventoryValueTotal = inventoryRows.reduce((total, product) => total + product.stockValue, 0);
   const reportTitle = `${capitalize(reportPeriod)} report`;
   const reportDateRange = reportRange.start === reportRange.end
     ? formatDate(reportRange.start)
@@ -83,12 +106,21 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
       filteredExpenses,
       filteredPurchaseTotal,
       filteredPurchases,
+      filteredRefunds,
+      filteredRefundTotal,
       filteredSales,
       filteredSalesTotal,
+      filteredStockMovements,
+      filteredTransfers,
+      inventoryRows,
+      inventoryStockTotal,
+      inventoryValueTotal,
       purchaseQuantityTotal,
       reportDateRange,
       reportTitle,
+      refundedItemCount,
       session,
+      stockMovementQuantityTotal,
       summary
     }));
     printWindow.document.close();
@@ -173,6 +205,11 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
             <p>{filteredSales.length} sales transactions</p>
           </article>
           <article className="report-card">
+            <span>Refund total</span>
+            <strong>{formatCurrency(filteredRefundTotal)}</strong>
+            <p>{filteredRefunds.length} refund records</p>
+          </article>
+          <article className="report-card">
             <span>Stock purchases</span>
             <strong>{formatCurrency(filteredPurchaseTotal)}</strong>
             <p>{filteredPurchases.length} stock-in records</p>
@@ -186,6 +223,11 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
             <span>Items sold</span>
             <strong>{filteredItemCount}</strong>
             <p>Selected {reportPeriod} period</p>
+          </article>
+          <article className="report-card">
+            <span>Inventory stock</span>
+            <strong>{inventoryStockTotal}</strong>
+            <p>{formatCurrency(inventoryValueTotal)} retail value</p>
           </article>
         </div>
 
@@ -247,6 +289,52 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
 
         <div className="report-section">
           <div className="panel-heading compact-heading">
+            <h3>Detailed Refunds</h3>
+            <p>{filteredRefunds.length} records</p>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Sale ID</th>
+                  <th>Items</th>
+                  <th>Qty</th>
+                  <th>Amount</th>
+                  <th>Employee</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRefunds.map((refund) => (
+                  <tr key={refund.id}>
+                    <td>{formatDate(refund.date)}</td>
+                    <td>{refund.saleId}</td>
+                    <td>{(refund.lineItems ?? []).map((item) => item.productName).join(", ") || "-"}</td>
+                    <td>{(refund.lineItems ?? []).reduce((total, item) => total + Number(item.quantity ?? 0), 0)}</td>
+                    <td>{formatCurrency(refund.amount ?? 0)}</td>
+                    <td>{refund.employee}</td>
+                    <td>{refund.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {filteredRefunds.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan="3">Refund totals</td>
+                    <td>{refundedItemCount}</td>
+                    <td>{formatCurrency(filteredRefundTotal)}</td>
+                    <td colSpan="2"></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+            {filteredRefunds.length === 0 && <p className="empty-state">No refunds for this period.</p>}
+          </div>
+        </div>
+
+        <div className="report-section">
+          <div className="panel-heading compact-heading">
             <h3>Detailed Expenses</h3>
             <p>{filteredExpenses.length} records</p>
           </div>
@@ -287,8 +375,8 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
 
         <div className="report-section">
           <div className="panel-heading compact-heading">
-            <h3>Detailed Stock Purchases</h3>
-            <p>{filteredPurchases.length} records</p>
+            <h3>Detailed Stock Movements</h3>
+            <p>{filteredStockMovements.length} records</p>
           </div>
           <div className="table-wrap">
             <table>
@@ -296,7 +384,7 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
                 <tr>
                   <th>Date</th>
                   <th>Product</th>
-                  <th>Branch</th>
+                  <th>Movement</th>
                   <th>Source</th>
                   <th>Qty</th>
                   <th>Price / unit cost</th>
@@ -304,11 +392,11 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
                 </tr>
               </thead>
               <tbody>
-                {filteredPurchases.map((record) => (
+                {filteredStockMovements.map((record) => (
                   <tr key={record.id}>
                     <td>{formatDate(record.date)}</td>
                     <td>{record.productName}</td>
-                    <td>{record.branchName ?? summary.branchName}</td>
+                    <td>{record.type === "transfer" ? `${record.fromBranchId} to ${record.toBranchId}` : (record.branchName ?? summary.branchName)}</td>
                     <td>{record.source ?? "Stock-in"}</td>
                     <td>{record.quantity}</td>
                     <td>{formatCurrency(record.unitCost ?? 0)}</td>
@@ -316,18 +404,62 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
                   </tr>
                 ))}
               </tbody>
-              {filteredPurchases.length > 0 && (
+              {filteredStockMovements.length > 0 && (
                 <tfoot>
                   <tr>
-                    <td colSpan="4">Stock purchase totals</td>
-                    <td>{purchaseQuantityTotal}</td>
+                    <td colSpan="4">Stock movement totals</td>
+                    <td>{stockMovementQuantityTotal}</td>
                     <td></td>
                     <td>{formatCurrency(filteredPurchaseTotal)}</td>
                   </tr>
                 </tfoot>
               )}
             </table>
-            {filteredPurchases.length === 0 && <p className="empty-state">No stock purchases for this period.</p>}
+            {filteredStockMovements.length === 0 && <p className="empty-state">No stock movements for this period.</p>}
+          </div>
+        </div>
+
+        <div className="report-section">
+          <div className="panel-heading compact-heading">
+            <h3>Inventory Snapshot</h3>
+            <p>{inventoryRows.length} products</p>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>SKU</th>
+                  <th>Category</th>
+                  <th>Stock</th>
+                  <th>Retail price</th>
+                  <th>Stock value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inventoryRows.map((product) => (
+                  <tr key={product.id}>
+                    <td>{product.name}</td>
+                    <td>{product.sku}</td>
+                    <td>{product.category}</td>
+                    <td>{product.stockCount}</td>
+                    <td>{formatCurrency(product.retailPrice)}</td>
+                    <td>{formatCurrency(product.stockValue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {inventoryRows.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan="3">Inventory totals</td>
+                    <td>{inventoryStockTotal}</td>
+                    <td></td>
+                    <td>{formatCurrency(inventoryValueTotal)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+            {inventoryRows.length === 0 && <p className="empty-state">No inventory products yet.</p>}
           </div>
         </div>
       </section>
@@ -505,12 +637,20 @@ function createReportDocument({
   filteredExpenses,
   filteredPurchaseTotal,
   filteredPurchases,
+  filteredRefunds,
+  filteredRefundTotal,
   filteredSales,
   filteredSalesTotal,
+  filteredStockMovements,
+  inventoryRows,
+  inventoryStockTotal,
+  inventoryValueTotal,
   purchaseQuantityTotal,
   reportDateRange,
   reportTitle,
+  refundedItemCount,
   session,
+  stockMovementQuantityTotal,
   summary
 }) {
   const generatedAt = new Date().toLocaleString("en", {
@@ -546,19 +686,44 @@ function createReportDocument({
         </tr>
       `).join("")
     : `<tr><td colspan="7" class="empty">No expenses for this period.</td></tr>`;
-  const purchaseRows = filteredPurchases.length
-    ? filteredPurchases.map((record) => `
+  const refundRows = filteredRefunds.length
+    ? filteredRefunds.map((refund) => `
+        <tr>
+          <td>${escapeHtml(formatDate(refund.date))}</td>
+          <td>${escapeHtml(refund.saleId)}</td>
+          <td>${escapeHtml((refund.lineItems ?? []).map((item) => item.productName).join(", ") || "-")}</td>
+          <td class="number">${(refund.lineItems ?? []).reduce((total, item) => total + Number(item.quantity ?? 0), 0)}</td>
+          <td class="number">${escapeHtml(formatCurrency(refund.amount ?? 0))}</td>
+          <td>${escapeHtml(refund.employee ?? session.userName)}</td>
+          <td>${escapeHtml(refund.reason ?? "-")}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="7" class="empty">No refunds for this period.</td></tr>`;
+  const stockMovementRows = filteredStockMovements.length
+    ? filteredStockMovements.map((record) => `
         <tr>
           <td>${escapeHtml(formatDate(record.date))}</td>
           <td>${escapeHtml(record.productName)}</td>
-          <td>${escapeHtml(record.branchName ?? summary.branchName)}</td>
+          <td>${escapeHtml(record.type === "transfer" ? `${record.fromBranchId} to ${record.toBranchId}` : (record.branchName ?? summary.branchName))}</td>
           <td>${escapeHtml(record.source ?? "Stock-in")}</td>
           <td class="number">${escapeHtml(String(record.quantity ?? 0))}</td>
           <td class="number">${escapeHtml(formatCurrency(record.unitCost ?? 0))}</td>
           <td class="number">${escapeHtml(formatCurrency(record.purchaseTotal ?? 0))}</td>
         </tr>
       `).join("")
-    : `<tr><td colspan="7" class="empty">No stock purchases for this period.</td></tr>`;
+    : `<tr><td colspan="7" class="empty">No stock movements for this period.</td></tr>`;
+  const inventoryRowsHtml = inventoryRows.length
+    ? inventoryRows.map((product) => `
+        <tr>
+          <td>${escapeHtml(product.name)}</td>
+          <td>${escapeHtml(product.sku ?? "-")}</td>
+          <td>${escapeHtml(product.category ?? "-")}</td>
+          <td class="number">${escapeHtml(String(product.stockCount ?? 0))}</td>
+          <td class="number">${escapeHtml(formatCurrency(product.retailPrice ?? 0))}</td>
+          <td class="number">${escapeHtml(formatCurrency(product.stockValue ?? 0))}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="6" class="empty">No inventory products yet.</td></tr>`;
 
   return `<!doctype html>
     <html>
@@ -709,12 +874,24 @@ function createReportDocument({
               <strong>${escapeHtml(formatCurrency(filteredSalesTotal))}</strong>
             </div>
             <div class="summary-box">
+              <span>Refunds</span>
+              <strong>${escapeHtml(formatCurrency(filteredRefundTotal))}</strong>
+            </div>
+            <div class="summary-box">
               <span>Stock purchases</span>
               <strong>${escapeHtml(formatCurrency(filteredPurchaseTotal))}</strong>
             </div>
             <div class="summary-box">
               <span>Expenses</span>
               <strong>${escapeHtml(formatCurrency(filteredExpenseTotal))}</strong>
+            </div>
+            <div class="summary-box">
+              <span>Inventory stock</span>
+              <strong>${inventoryStockTotal}</strong>
+            </div>
+            <div class="summary-box">
+              <span>Inventory value</span>
+              <strong>${escapeHtml(formatCurrency(inventoryValueTotal))}</strong>
             </div>
           </section>
 
@@ -745,6 +922,30 @@ function createReportDocument({
             </tfoot>
           </table>
 
+          <h2 class="section-title">Detailed Refunds</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Sale ID</th>
+                <th>Items</th>
+                <th class="number">Qty</th>
+                <th class="number">Amount</th>
+                <th>Employee</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>${refundRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3">Refund totals</td>
+                <td class="number">${refundedItemCount}</td>
+                <td class="number">${escapeHtml(formatCurrency(filteredRefundTotal))}</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+
           <h2 class="section-title">Detailed Expenses</h2>
           <table>
             <thead>
@@ -768,26 +969,49 @@ function createReportDocument({
             </tfoot>
           </table>
 
-          <h2 class="section-title">Detailed Stock Purchases</h2>
+          <h2 class="section-title">Detailed Stock Movements</h2>
           <table>
             <thead>
               <tr>
                 <th>Date</th>
                 <th>Product</th>
-                <th>Branch</th>
+                <th>Movement</th>
                 <th>Source</th>
                 <th class="number">Qty</th>
                 <th class="number">Unit Cost</th>
                 <th class="number">Purchase Total</th>
               </tr>
             </thead>
-            <tbody>${purchaseRows}</tbody>
+            <tbody>${stockMovementRows}</tbody>
             <tfoot>
               <tr>
-                <td colspan="4">Stock purchase totals</td>
-                <td class="number">${purchaseQuantityTotal}</td>
+                <td colspan="4">Stock movement totals</td>
+                <td class="number">${stockMovementQuantityTotal}</td>
                 <td></td>
                 <td class="number">${escapeHtml(formatCurrency(filteredPurchaseTotal))}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <h2 class="section-title">Inventory Snapshot</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>SKU</th>
+                <th>Category</th>
+                <th class="number">Stock</th>
+                <th class="number">Retail Price</th>
+                <th class="number">Stock Value</th>
+              </tr>
+            </thead>
+            <tbody>${inventoryRowsHtml}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3">Inventory totals</td>
+                <td class="number">${inventoryStockTotal}</td>
+                <td></td>
+                <td class="number">${escapeHtml(formatCurrency(inventoryValueTotal))}</td>
               </tr>
             </tfoot>
           </table>

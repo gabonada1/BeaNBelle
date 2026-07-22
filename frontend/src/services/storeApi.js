@@ -42,11 +42,34 @@ export function createProduct(token, product) {
   });
 }
 
+export function updateProduct(token, productId, product) {
+  return apiRequest(`/products/${encodeURIComponent(productId)}`, {
+    method: "PATCH",
+    headers: authHeaders(token),
+    body: JSON.stringify(product)
+  });
+}
+
+export function deleteProduct(token, productId) {
+  return apiRequest(`/products/${encodeURIComponent(productId)}`, {
+    method: "DELETE",
+    headers: authHeaders(token)
+  });
+}
+
 export function createStockMovement(token, movement) {
   return apiRequest("/stock-movements", {
     method: "POST",
     headers: authHeaders(token),
     body: JSON.stringify(movement)
+  });
+}
+
+export function createStockTransfer(token, transfer) {
+  return apiRequest("/stock-transfers", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(transfer)
   });
 }
 

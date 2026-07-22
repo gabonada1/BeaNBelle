@@ -18,10 +18,13 @@ import {
   createRefund,
   createSale,
   createStockMovement,
+  createStockTransfer,
   createUser,
+  deleteProduct,
   getBranches,
   getSummary,
-  getUsers
+  getUsers,
+  updateProduct
 } from "./services/storeApi.js";
 
 const baseTabs = [
@@ -184,8 +187,23 @@ export default function App() {
     await refreshStore(selectedBranchId);
   }
 
+  async function handleTransferStock(stockTransfer) {
+    await createStockTransfer(session.token, stockTransfer);
+    await refreshStore(selectedBranchId);
+  }
+
   async function handleAddProduct(product) {
     await createProduct(session.token, product);
+    await refreshStore(selectedBranchId);
+  }
+
+  async function handleUpdateProduct(productId, product) {
+    await updateProduct(session.token, productId, product);
+    await refreshStore(selectedBranchId);
+  }
+
+  async function handleDeleteProduct(productId) {
+    await deleteProduct(session.token, productId);
     await refreshStore(selectedBranchId);
   }
 
@@ -260,6 +278,9 @@ export default function App() {
           summary={summary}
           onAddProduct={handleAddProduct}
           onAddStock={handleAddStock}
+          onDeleteProduct={handleDeleteProduct}
+          onTransferStock={handleTransferStock}
+          onUpdateProduct={handleUpdateProduct}
         />
       )}
       {activeTab === "returns" && (

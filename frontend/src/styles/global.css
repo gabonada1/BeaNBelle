@@ -240,6 +240,16 @@ input[readonly] {
   padding: 0 16px;
 }
 
+.danger-button {
+  background: #fff;
+  border: 1px solid #f0b8b8;
+  border-radius: 9px;
+  color: #a83232;
+  font-weight: 800;
+  min-height: 42px;
+  padding: 0 16px;
+}
+
 .app-shell {
   background: transparent;
   display: grid;
@@ -1202,6 +1212,26 @@ select:focus-visible {
   color: var(--ink);
 }
 
+.product-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.product-edit-form {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
+}
+
+.product-edit-form .product-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
 .table-wrap {
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -1542,8 +1572,14 @@ tbody tr:hover {
   .inventory-toolbar,
   .sold-item-form,
   .checkout-row,
+  .product-edit-form,
   .product-form {
     grid-template-columns: 1fr;
+  }
+
+  .product-actions,
+  .product-edit-form .product-actions {
+    justify-content: flex-start;
   }
 
   .receipt-list-heading {

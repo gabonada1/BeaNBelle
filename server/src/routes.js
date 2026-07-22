@@ -41,6 +41,10 @@ export async function handleApiRoute(request, url, context) {
     return handleStockMovements(request, context);
   }
 
+  if (parts[1] === "stock-transfers") {
+    return handleStockTransfers(request, context);
+  }
+
   if (parts[1] === "sales") {
     return handleSales(request, parts, context);
   }
@@ -306,6 +310,16 @@ async function handleProducts(request, parts, context) {
     return found(product, "Product not found.", (value) => ({ product: serializeProduct(value) }));
   }
 
+  if (request.method === "DELETE" && parts.length === 3) {
+    const product = await db.collection("products").findOneAndUpdate(
+      { id: parts[2] },
+      { $set: { active: false, updatedAt: new Date() } },
+      { returnDocument: "after" }
+    );
+
+    return found(product, "Product not found.", (value) => ({ product: serializeProduct(value) }));
+  }
+
   return methodNotAllowed();
 }
 
@@ -315,7 +329,15 @@ async function handleStockMovements(request, context) {
   if (authError) return authError;
 
   if (request.method === "GET") {
-    const filter = context.user.role === "owner" ? {} : { branchId: context.user.branchId };
+    const filter = context.user.role === "owner"
+      ? {}
+      : {
+          $or: [
+            { branchId: context.user.branchId },
+            { fromBranchId: context.user.branchId },
+            { toBranchId: context.user.branchId }
+          ]
+        };
     const movements = await db.collection("stockMovements").find(filter).sort({ createdAt: -1 }).toArray();
     return { status: 200, body: { stockMovements: movements.map(serializeMovement) } };
   }
@@ -358,6 +380,96 @@ async function handleStockMovements(request, context) {
   }
 
   return methodNotAllowed();
+}
+
+async function handleStockTransfers(request, context) {
+  const db = await getDb();
+  const authError = requireUser(context);
+  if (authError) return authError;
+
+  if (request.method !== "POST") {
+    return methodNotAllowed();
+  }
+
+  const body = await readJson(request);
+  requireFields(body, ["productId", "quantity", "toBranchId"]);
+
+  const fromBranchId = context.user.role === "owner" ? body.fromBranchId : context.user.branchId;
+  const toBranchId = body.toBranchId;
+  requireFields({ fromBranchId }, ["fromBranchId"]);
+
+  if (fromBranchId === toBranchId) {
+    return { status: 400, body: { error: "Choose a different destination branch." } };
+  }
+
+  const quantity = toNumber(body.quantity);
+  if (quantity < 1) return { status: 400, body: { error: "Quantity must be at least 1." } };
+
+  const branches = await db.collection("branches").find({
+    id: { $in: [fromBranchId, toBranchId] },
+    active: { $ne: false }
+  }).toArray();
+
+  if (!branches.some((branch) => branch.id === fromBranchId)) {
+    return { status: 400, body: { error: "Source branch does not exist." } };
+  }
+
+  if (!branches.some((branch) => branch.id === toBranchId)) {
+    return { status: 400, body: { error: "Destination branch does not exist." } };
+  }
+
+  const client = await getClient();
+  const session = client.startSession();
+  let product;
+  let movement;
+
+  try {
+    await session.withTransaction(async () => {
+      product = await db.collection("products").findOneAndUpdate(
+        { id: body.productId, [`stock.${fromBranchId}`]: { $gte: quantity } },
+        {
+          $inc: {
+            [`stock.${fromBranchId}`]: -quantity,
+            [`stock.${toBranchId}`]: quantity
+          },
+          $set: { updatedAt: new Date() }
+        },
+        { returnDocument: "after", session }
+      );
+
+      if (!product) {
+        throw Object.assign(new Error("Product not found or source branch has insufficient stock."), { status: 400 });
+      }
+
+      movement = {
+        id: makeId("TR"),
+        productId: body.productId,
+        productName: product.name,
+        branchId: fromBranchId,
+        fromBranchId,
+        toBranchId,
+        quantity,
+        unitCost: 0,
+        purchaseTotal: 0,
+        source: body.note?.trim() || `Transfer to ${toBranchId}`,
+        type: "transfer",
+        employee: context.user.name,
+        date: new Date().toISOString().slice(0, 10),
+        createdAt: new Date()
+      };
+
+      await db.collection("stockMovements").insertOne(movement, { session });
+    });
+  } catch (error) {
+    return { status: error.status ?? 500, body: { error: error.message } };
+  } finally {
+    await session.endSession();
+  }
+
+  return {
+    status: 201,
+    body: { stockMovement: serializeMovement(movement), product: serializeProduct(product) }
+  };
 }
 
 async function handleSales(request, parts, context) {
@@ -686,12 +798,15 @@ function serializeMovement(movement) {
     productId: movement.productId,
     productName: movement.productName,
     branchId: movement.branchId,
+    fromBranchId: movement.fromBranchId ?? null,
+    toBranchId: movement.toBranchId ?? null,
     date: movement.date,
     employee: movement.employee,
     quantity: movement.quantity,
     unitCost: movement.unitCost ?? 0,
     purchaseTotal: movement.purchaseTotal ?? 0,
     source: movement.source,
+    type: movement.type ?? "stock-in",
     createdAt: movement.createdAt
   };
 }

@@ -1,7 +1,6 @@
 import { loadEnv } from "./env.js";
 import { getDb } from "./db.js";
 import { hashPassword } from "./auth.js";
-import { starterBranches, starterExpenses, starterProducts, starterSales, starterUsers } from "./seedData.js";
 
 loadEnv();
 
@@ -14,20 +13,15 @@ let db;
 try {
   db = await getDb();
   await createIndexes();
-  await freshCollections();
-  await insertMany("branches", starterBranches);
-  await insertMany("products", starterProducts);
-  await insertMany("sales", starterSales);
-  await insertMany("expenses", starterExpenses);
-  await insertUsers(starterUsers);
+  await freshAccountCollections();
   await createOwner();
 } catch (error) {
-  console.error("Fresh seed failed.");
+  console.error("Account seed failed.");
   console.error(error.message);
   process.exit(1);
 }
 
-console.log("Fresh seed completed. Starter branches, products, and users were created.");
+console.log("Account seed completed. Owner account was created.");
 console.log(`Owner login: ${ownerUsername}`);
 console.log(`Owner password: ${ownerPassword}`);
 process.exit(0);
@@ -36,50 +30,11 @@ function now() {
   return new Date();
 }
 
-async function freshCollections() {
-  const collections = [
-    "branches",
-    "products",
-    "sales",
-    "expenses",
-    "refunds",
-    "stockMovements",
-    "users",
-    "sessions"
-  ];
+async function freshAccountCollections() {
+  const collections = ["users", "sessions"];
 
   for (const collectionName of collections) {
     await db.collection(collectionName).deleteMany({});
-  }
-}
-
-async function insertMany(collectionName, rows) {
-  const collection = db.collection(collectionName);
-
-  for (const row of rows) {
-    await collection.insertOne({
-      ...row,
-      active: row.active ?? true,
-      createdAt: now(),
-      updatedAt: now()
-    });
-  }
-}
-
-async function insertUsers(users) {
-  const collection = db.collection("users");
-
-  for (const user of users) {
-    await collection.insertOne({
-      name: user.name,
-      username: user.username.trim().toLowerCase(),
-      passwordHash: hashPassword(user.password),
-      role: user.role,
-      branchId: user.branchId ?? null,
-      active: user.active ?? true,
-      createdAt: now(),
-      updatedAt: now()
-    });
   }
 }
 
