@@ -2941,6 +2941,110 @@ body {
   grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
 }
 
+.modal-backdrop {
+  align-items: center;
+  background: rgba(20, 15, 24, 0.72);
+  bottom: 0;
+  display: grid;
+  inset: 0;
+  justify-items: center;
+  left: 0;
+  padding: 24px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 50;
+}
+
+.sale-modal {
+  background: #ffffff;
+  border-radius: 22px;
+  box-shadow: var(--soft-shadow);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  padding: 24px;
+  width: min(1200px, 100%);
+}
+
+.sale-modal .pos-hero {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.inventory-pagination {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.suggestions-list {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--soft-shadow);
+  margin-top: 8px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px;
+}
+
+.suggestion-item {
+  background: transparent;
+  border: 0;
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--ink);
+}
+
+.suggestion-item:hover {
+  background: var(--surface-soft);
+}
+
+.inventory-pagination-meta {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.pagination-controls {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pagination-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pagination-button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  display: inline-flex;
+  min-height: 42px;
+  justify-content: center;
+  padding: 0 14px;
+}
+
+.pagination-button.active {
+  background: #f97316;
+  border-color: #f97316;
+  color: #fff;
+}
+
 .pos-catalog,
 .pos-order {
   min-height: 100%;

@@ -1,19 +1,29 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
 
 export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary, onRecordSale }) {
   const [productId, setProductId] = useState(summary.inventory[0]?.id ?? "");
-  const [quantity, setQuantity] = useState(1);
+  const [quickQuantity, setQuickQuantity] = useState(1);
   const [priceType, setPriceType] = useState("retail");
+  const [quickSearch, setQuickSearch] = useState("");
+  const [showQuickSuggestions, setShowQuickSuggestions] = useState(false);
   const [saleType, setSaleType] = useState("");
   const [overridePrice, setOverridePrice] = useState("");
   const [channel, setChannel] = useState("In store");
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [lineItems, setLineItems] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("Show All");
   const [cartSearch, setCartSearch] = useState("");
   const [message, setMessage] = useState("");
+  const [showSaleModal, setShowSaleModal] = useState(false);
+
+  function openSaleModal() {
+    setShowSaleModal(true);
+    setMessage("");
+  }
+
+  function closeSaleModal() {
+    setShowSaleModal(false);
+  }
   const selectedProduct = summary.inventory.find((product) => product.id === productId);
   const selectedUnitPrice = selectedProduct ? getUnitPrice(selectedProduct, priceType) : 0;
   const activeUnitPrice = saleType ? Number(overridePrice || selectedUnitPrice) : selectedUnitPrice;
@@ -21,14 +31,6 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
   const itemCount = lineItems.reduce((total, item) => total + item.quantity, 0);
   const employeeBranchId = session.role === "admin" ? selectedBranchId : session.branchId;
   const employeeBranchName = summary.branchName ?? session.branchName;
-  const categories = ["Show All", ...new Set(summary.inventory.map((product) => product.category).filter(Boolean))];
-  const filteredProducts = summary.inventory.filter((product) => {
-    const haystack = `${product.name} ${product.category ?? ""} ${product.sku ?? ""}`.toLowerCase();
-    const matchesSearch = haystack.includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === "Show All" || product.category === selectedCategory;
-
-    return matchesSearch && matchesCategory;
-  });
   const visibleLineItems = lineItems.filter((item) => {
     if (!cartSearch.trim()) {
       return true;
@@ -36,11 +38,6 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
 
     return item.productName.toLowerCase().includes(cartSearch.toLowerCase());
   });
-  const employeeSales = useMemo(
-    () => summary.recentSales.filter((sale) => sale.employee === session.userName),
-    [session.userName, summary.recentSales]
-  );
-
   function getUnitPrice(product, type = priceType) {
     return type === "reseller"
       ? product.resellerPrice ?? product.price
@@ -87,12 +84,12 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
         total: unitPrice * quantityToAdd
       }
     ]);
-    setQuantity(1);
+    setQuickQuantity(1);
     setMessage("");
   }
 
   function addItemToSale() {
-    addProductToSale(selectedProduct, Number(quantity));
+    addProductToSale(selectedProduct, Number(quickQuantity));
   }
 
   function removeLineItem(indexToRemove) {
@@ -101,7 +98,7 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
 
   function clearCart() {
     setLineItems([]);
-    setQuantity(1);
+    setQuickQuantity(1);
     setMessage("");
   }
 
@@ -134,7 +131,7 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
     });
 
     setLineItems([]);
-    setQuantity(1);
+    setQuickQuantity(1);
     setSaleType("");
     setOverridePrice("");
     setMessage(`Sale recorded for ${employeeBranchName}.`);
@@ -148,180 +145,167 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
           <h2>Dashboard • POS</h2>
         </div>
         <div className="pos-hero-actions">
-          <button className="primary-button pos-action" type="button">+ New</button>
+          <button className="primary-button pos-action" type="button" onClick={openSaleModal}>+ New Sale</button>
         </div>
       </section>
 
-      <div className="pos-shell">
-        <section className="panel pos-catalog">
-          <div className="pos-toolbar">
-            <label className="field search-field">
-              <span>Search in products</span>
-              <input placeholder="Search by name, SKU, or category" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
-            </label>
-            <label className="field compact-field pos-select">
-              <span>All Category</span>
-              <select value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
-                {categories.map((category) => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field compact-field pos-select">
-              <span>Select price type</span>
-              <select value={priceType} onChange={(event) => setPriceType(event.target.value)}>
-                <option value="retail">Retail</option>
-                <option value="reseller">Reseller</option>
-              </select>
-            </label>
-          </div>
+      {showSaleModal && (
+        <div className="modal-backdrop" onClick={closeSaleModal}>
+          <div className="sale-modal panel" onClick={(event) => event.stopPropagation()}>
+            <div className="pos-hero modal-hero">
+              <div>
+                <p className="eyebrow">Point of Sale (POS)</p>
+                <h2>Add Sale</h2>
+              </div>
+              <button className="secondary-button" type="button" onClick={closeSaleModal}>Close</button>
+            </div>
+            <div className="pos-shell">
+              <aside className="panel pos-order">
+                <label className="field">
+                  <span>Search in existing</span>
+                  <input placeholder="Search current cart" value={cartSearch} onChange={(event) => setCartSearch(event.target.value)} />
+                </label>
 
-          <div className="category-row" aria-label="Product categories">
-            {categories.map((category) => (
-              <button
-                className={selectedCategory === category ? "category-chip active" : "category-chip"}
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                type="button"
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-
-          <div className="catalog-grid">
-            {filteredProducts.map((product) => {
-              const unitPrice = getUnitPrice(product);
-
-              return (
-                <article className="product-card" key={product.id}>
-                  <div className="product-thumb">{getProductBadge(product.name)}</div>
-                  <div className="product-card-body">
-                    <strong>{product.name}</strong>
-                    <span>{product.category} {product.sku ? `• ${product.sku}` : ""}</span>
-                    <p>{formatCurrency(unitPrice)}</p>
+                <div className="order-heading">
+                  <div>
+                    <p className="eyebrow">Order #20</p>
+                    <h3>Current order</h3>
                   </div>
-                  <button className="add-pill" onClick={() => addProductToSale(product, 1)} type="button">
-                    +
-                  </button>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <aside className="panel pos-order">
-          <label className="field">
-            <span>Search in existing</span>
-            <input placeholder="Search current cart" value={cartSearch} onChange={(event) => setCartSearch(event.target.value)} />
-          </label>
-
-          <div className="order-heading">
-            <div>
-              <p className="eyebrow">Order #20</p>
-              <h3>Current order</h3>
-            </div>
-            <button className="ghost-button" onClick={clearCart} type="button">Clear</button>
-          </div>
-
-          <div className="quick-add-card">
-            <label className="field">
-              <span>Quick add item</span>
-              <select value={productId} onChange={(event) => setProductId(event.target.value)}>
-                {summary.inventory.map((product) => (
-                  <option key={product.id} value={product.id}>{product.name}</option>
-                ))}
-              </select>
-            </label>
-            <div className="quick-add-grid">
-              <label className="field">
-                <span>Quantity</span>
-                <input min="1" type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
-              </label>
-              <div className="quick-price">
-                <span>Price</span>
-                <strong>{selectedProduct ? formatCurrency(activeUnitPrice) : ""}</strong>
-              </div>
-            </div>
-            <label className="field">
-              <span>Transaction tag</span>
-              <select value={saleType} onChange={(event) => setSaleType(event.target.value)}>
-                <option value="">None</option>
-                <option value="Sale">Sale</option>
-                <option value="Raffle">Raffle</option>
-              </select>
-            </label>
-            {saleType && (
-              <label className="field">
-                <span>Override price</span>
-                <input
-                  min="0"
-                  step="0.01"
-                  type="number"
-                  value={overridePrice}
-                  onChange={(event) => setOverridePrice(event.target.value)}
-                  placeholder={String(selectedUnitPrice)}
-                />
-              </label>
-            )}
-            <button className="secondary-button full-width" onClick={addItemToSale} type="button">
-              Add item
-            </button>
-          </div>
-
-          <div className="cart-list">
-            {visibleLineItems.map((item, index) => (
-              <article className="cart-item" key={`${item.productId}-${index}`}>
-                <div>
-                  <strong>{item.productName}</strong>
-                  <span>{formatCurrency(item.unitPrice)} x {item.quantity} = {formatCurrency(item.total)}</span>
+                  <button className="ghost-button" onClick={clearCart} type="button">Clear</button>
                 </div>
-                <button className="icon-chip danger" onClick={() => removeLineItem(index)} type="button">×</button>
-              </article>
-            ))}
-            {visibleLineItems.length === 0 && <p className="empty-state">No items added yet.</p>}
-          </div>
 
-          <form className="checkout-card" onSubmit={handleSubmit}>
-            <label className="field">
-              <span>Sales channel</span>
-              <select value={channel} onChange={(event) => setChannel(event.target.value)}>
-                <option>In store</option>
-                <option>E-commerce</option>
-                <option>Pickup</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Payment method</span>
-              <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
-                <option>Cash</option>
-                <option>GCash</option>
-                <option>Card</option>
-                <option>Bank Transfer</option>
-                <option>Online Payment</option>
-              </select>
-            </label>
-            <div className="totals-stack">
-              <div>
-                <span>Sub total</span>
-                <strong>{formatCurrency(saleTotal)}</strong>
-              </div>
-              <div>
-                <span>Total</span>
-                <strong>{formatCurrency(saleTotal)}</strong>
-              </div>
+                <div className="quick-add-card">
+                  <label className="field">
+                    <span>Quick add item</span>
+                    <input
+                      placeholder="Search item to add"
+                      value={quickSearch}
+                      onChange={(event) => {
+                        setQuickSearch(event.target.value);
+                        setShowQuickSuggestions(true);
+                      }}
+                      onFocus={() => setShowQuickSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowQuickSuggestions(false), 150)}
+                    />
+                    {showQuickSuggestions && quickSearch.trim() !== "" && (
+                      (() => {
+                        const quickSuggestions = summary.inventory
+                          .filter((p) => p.name.toLowerCase().includes(quickSearch.toLowerCase()))
+                          .slice(0, 8);
+
+                        return (
+                          <div className="suggestions-list">
+                            {quickSuggestions.map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                className="suggestion-item"
+                                onClick={() => {
+                                  setProductId(p.id);
+                                  setQuickSearch(p.name);
+                                  setShowQuickSuggestions(false);
+                                }}
+                              >
+                                {p.name}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+                  </label>
+                  <div className="quick-add-grid">
+                    <label className="field">
+                      <span>Quantity</span>
+                      <input min="1" type="number" value={quickQuantity} onChange={(event) => setQuickQuantity(event.target.value)} />
+                    </label>
+                    <div className="quick-price">
+                      <span>Price</span>
+                      <strong>{selectedProduct ? formatCurrency(activeUnitPrice) : ""}</strong>
+                    </div>
+                  </div>
+                  <label className="field">
+                    <span>Transaction tag</span>
+                    <select value={saleType} onChange={(event) => setSaleType(event.target.value)}>
+                      <option value="">None</option>
+                      <option value="Sale">Sale</option>
+                      <option value="Raffle">Raffle</option>
+                    </select>
+                  </label>
+                  {saleType && (
+                    <label className="field">
+                      <span>Override price</span>
+                      <input
+                        min="0"
+                        step="0.01"
+                        type="number"
+                        value={overridePrice}
+                        onChange={(event) => setOverridePrice(event.target.value)}
+                        placeholder={String(selectedUnitPrice)}
+                      />
+                    </label>
+                  )}
+                  <button className="secondary-button full-width" onClick={addItemToSale} type="button">
+                    Add item
+                  </button>
+                </div>
+
+                <div className="cart-list">
+                  {visibleLineItems.map((item, index) => (
+                    <article className="cart-item" key={`${item.productId}-${index}`}>
+                      <div>
+                        <strong>{item.productName}</strong>
+                        <span>{formatCurrency(item.unitPrice)} x {item.quantity} = {formatCurrency(item.total)}</span>
+                      </div>
+                      <button className="icon-chip danger" onClick={() => removeLineItem(index)} type="button">×</button>
+                    </article>
+                  ))}
+                  {visibleLineItems.length === 0 && <p className="empty-state">No items added yet.</p>}
+                </div>
+
+                <form className="checkout-card" onSubmit={handleSubmit}>
+                  <label className="field">
+                    <span>Sales channel</span>
+                    <select value={channel} onChange={(event) => setChannel(event.target.value)}>
+                      <option>In store</option>
+                      <option>E-commerce</option>
+                      <option>Pickup</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Payment method</span>
+                    <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
+                      <option>Cash</option>
+                      <option>GCash</option>
+                      <option>Card</option>
+                      <option>Bank Transfer</option>
+                      <option>Online Payment</option>
+                    </select>
+                  </label>
+                  <div className="totals-stack">
+                    <div>
+                      <span>Sub total</span>
+                      <strong>{formatCurrency(saleTotal)}</strong>
+                    </div>
+                    <div>
+                      <span>Total</span>
+                      <strong>{formatCurrency(saleTotal)}</strong>
+                    </div>
+                  </div>
+                  <button className="primary-button full-width" type="submit">
+                    Bill & Payment
+                  </button>
+                  <button className="secondary-button full-width" type="button" onClick={clearCart}>
+                    Draft
+                  </button>
+                </form>
+
+                {message && <p className="success-message">{message}</p>}
+              </aside>
             </div>
-            <button className="primary-button full-width" type="submit">
-              Bill & Payment
-            </button>
-            <button className="secondary-button full-width" type="button" onClick={clearCart}>
-              Draft
-            </button>
-          </form>
-
-          {message && <p className="success-message">{message}</p>}
-        </aside>
-      </div>
+          </div>
+        </div>
+      )}
 
       {lastReceipt && (
         <section className="panel receipt-preview-panel pos-receipt">
@@ -422,13 +406,4 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
       </section>
     </div>
   );
-}
-
-function getProductBadge(name) {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
 }

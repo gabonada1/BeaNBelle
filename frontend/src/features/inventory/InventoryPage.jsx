@@ -27,6 +27,8 @@ export function InventoryPage({
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [editingProductId, setEditingProductId] = useState("");
   const [editForm, setEditForm] = useState({
     category: "",
@@ -57,6 +59,14 @@ export function InventoryPage({
 
     return matchesCategory && matchesSearch;
   });
+
+  const pageCount = Math.max(1, Math.ceil(filteredInventory.length / itemsPerPage));
+  const pagedInventory = filteredInventory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const pageNumbers = Array.from({ length: pageCount }, (_, index) => index + 1);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCategory, itemsPerPage, summary.inventory.length]);
 
   useEffect(() => {
     const firstCategory = summary.inventory[0]?.category ?? "";
@@ -408,8 +418,40 @@ export function InventoryPage({
             </button>
           ))}
         </div>
+        <div className="inventory-pagination">
+          <span className="inventory-pagination-meta">
+            Showing {pagedInventory.length} of {filteredInventory.length} item{filteredInventory.length === 1 ? "" : "s"}
+          </span>
+          <div className="pagination-controls">
+            <label className="field compact-field">
+              <span>Items per page</span>
+              <select value={itemsPerPage} onChange={(event) => setItemsPerPage(Number(event.target.value))}>
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+              </select>
+            </label>
+            <div className="pagination-buttons">
+              <button className="secondary-button" type="button" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
+                Previous
+              </button>
+              {pageNumbers.map((page) => (
+                <button
+                  key={page}
+                  className={page === currentPage ? "pagination-button active" : "pagination-button"}
+                  type="button"
+                  onClick={() => setCurrentPage(page)}
+                >
+                  {page}
+                </button>
+              ))}
+              <button className="secondary-button" type="button" onClick={() => setCurrentPage(Math.min(pageCount, currentPage + 1))} disabled={currentPage === pageCount}>
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
         <div className="product-list">
-          {filteredInventory.map((product) => {
+          {pagedInventory.map((product) => {
             const stockCount = summary.branchId === "all"
               ? Object.values(product.stock).reduce((total, count) => total + count, 0)
               : product.stock[summary.branchId];

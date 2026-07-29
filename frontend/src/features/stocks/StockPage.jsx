@@ -5,6 +5,8 @@ export function StockPage({ branches, session, summary, onRecordSale }) {
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [quantities, setQuantities] = useState({});
   const [priceTypes, setPriceTypes] = useState({});
   const [message, setMessage] = useState("");
@@ -17,9 +19,13 @@ export function StockPage({ branches, session, summary, onRecordSale }) {
     return matchesCategory && matchesSearch;
   });
 
+  const pageCount = Math.max(1, Math.ceil(filteredStocks.length / itemsPerPage));
+  const pagedStocks = filteredStocks.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   function handleSearch(event) {
     event.preventDefault();
     setSearchTerm(searchInput.trim());
+    setCurrentPage(1);
   }
 
   function handleSold(product) {
@@ -130,7 +136,43 @@ export function StockPage({ branches, session, summary, onRecordSale }) {
         {message && <p className="success-message">{message}</p>}
 
         <div className="stock-table-list">
-          {filteredStocks.map((product) => {
+          <div className="inventory-pagination">
+            <span className="inventory-pagination-meta">
+              Showing {Math.min(pagedStocks.length, filteredStocks.length)} of {filteredStocks.length} item{filteredStocks.length === 1 ? "" : "s"}
+            </span>
+            <div className="pagination-controls">
+              <label className="field compact-field">
+                <span>Items per page</span>
+                <select value={itemsPerPage} onChange={(event) => {
+                  setItemsPerPage(Number(event.target.value));
+                  setCurrentPage(1);
+                }}>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                </select>
+              </label>
+              <div className="pagination-buttons">
+                <button className="secondary-button" type="button" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
+                  Previous
+                </button>
+                {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
+                  <button
+                    key={page}
+                    className={page === currentPage ? "pagination-button active" : "pagination-button"}
+                    type="button"
+                    onClick={() => setCurrentPage(page)}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button className="secondary-button" type="button" onClick={() => setCurrentPage(Math.min(pageCount, currentPage + 1))} disabled={currentPage === pageCount}>
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {pagedStocks.map((product) => {
             const employeeStock = product.stock[session.branchId] ?? 0;
             const totalStock = Object.values(product.stock).reduce((total, count) => total + count, 0);
 
