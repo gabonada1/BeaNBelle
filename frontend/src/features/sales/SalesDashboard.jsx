@@ -99,6 +99,7 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
   function clearCart() {
     setLineItems([]);
     setQuickQuantity(1);
+    setPriceType("retail");
     setMessage("");
   }
 
@@ -132,6 +133,7 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
 
     setLineItems([]);
     setQuickQuantity(1);
+    setPriceType("retail");
     setSaleType("");
     setOverridePrice("");
     setMessage(`Sale recorded for ${employeeBranchName}.`);
@@ -224,6 +226,13 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
                       <strong>{selectedProduct ? formatCurrency(activeUnitPrice) : ""}</strong>
                     </div>
                   </div>
+                  <label className="field">
+                    <span>Price type</span>
+                    <select value={priceType} onChange={(event) => setPriceType(event.target.value)}>
+                      <option value="retail">Retail price</option>
+                      <option value="reseller">Reseller price</option>
+                    </select>
+                  </label>
                   <label className="field">
                     <span>Transaction tag</span>
                     <select value={saleType} onChange={(event) => setSaleType(event.target.value)}>
