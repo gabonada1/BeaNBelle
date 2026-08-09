@@ -3005,7 +3005,8 @@ body {
   color: var(--ink);
 }
 
-.suggestion-item:hover {
+.suggestion-item:hover,
+.suggestion-item.active {
   background: var(--surface-soft);
 }
 

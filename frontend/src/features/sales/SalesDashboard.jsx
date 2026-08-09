@@ -7,6 +7,7 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
   const [priceType, setPriceType] = useState("retail");
   const [quickSearch, setQuickSearch] = useState("");
   const [showQuickSuggestions, setShowQuickSuggestions] = useState(false);
+  const [highlightedSuggestionIndex, setHighlightedSuggestionIndex] = useState(-1);
   const [saleType, setSaleType] = useState("");
   const [overridePrice, setOverridePrice] = useState("");
   const [channel, setChannel] = useState("In store");
@@ -24,6 +25,10 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
   function closeSaleModal() {
     setShowSaleModal(false);
   }
+  const suggestedProducts = quickSearch.trim() === "" ? [] : summary.inventory
+    .filter((p) => p.name.toLowerCase().includes(quickSearch.toLowerCase()))
+    .slice(0, 8);
+
   const selectedProduct = summary.inventory.find((product) => product.id === productId);
   const selectedUnitPrice = selectedProduct ? getUnitPrice(selectedProduct, priceType) : 0;
   const activeUnitPrice = saleType ? Number(overridePrice || selectedUnitPrice) : selectedUnitPrice;
@@ -86,6 +91,13 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
     ]);
     setQuickQuantity(1);
     setMessage("");
+  }
+
+  function selectQuickSuggestion(product) {
+    setProductId(product.id);
+    setQuickSearch(product.name);
+    setShowQuickSuggestions(false);
+    setHighlightedSuggestionIndex(-1);
   }
 
   function addItemToSale() {
@@ -185,35 +197,56 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
                       onChange={(event) => {
                         setQuickSearch(event.target.value);
                         setShowQuickSuggestions(true);
+                        setHighlightedSuggestionIndex(0);
                       }}
-                      onFocus={() => setShowQuickSuggestions(true)}
+                      onFocus={() => {
+                        setShowQuickSuggestions(true);
+                        setHighlightedSuggestionIndex(0);
+                      }}
                       onBlur={() => setTimeout(() => setShowQuickSuggestions(false), 150)}
-                    />
-                    {showQuickSuggestions && quickSearch.trim() !== "" && (
-                      (() => {
-                        const quickSuggestions = summary.inventory
-                          .filter((p) => p.name.toLowerCase().includes(quickSearch.toLowerCase()))
-                          .slice(0, 8);
+                      onKeyDown={(event) => {
+                        if (!showQuickSuggestions || suggestedProducts.length === 0) {
+                          return;
+                        }
 
-                        return (
-                          <div className="suggestions-list">
-                            {quickSuggestions.map((p) => (
-                              <button
-                                key={p.id}
-                                type="button"
-                                className="suggestion-item"
-                                onClick={() => {
-                                  setProductId(p.id);
-                                  setQuickSearch(p.name);
-                                  setShowQuickSuggestions(false);
-                                }}
-                              >
-                                {p.name}
-                              </button>
-                            ))}
-                          </div>
-                        );
-                      })()
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          setHighlightedSuggestionIndex((index) => Math.min(index + 1, suggestedProducts.length - 1));
+                        }
+
+                        if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          setHighlightedSuggestionIndex((index) => Math.max(index - 1, 0));
+                        }
+
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          const selectedIndex = highlightedSuggestionIndex >= 0 ? highlightedSuggestionIndex : 0;
+                          const selected = suggestedProducts[selectedIndex];
+                          if (selected) {
+                            selectQuickSuggestion(selected);
+                          }
+                        }
+
+                        if (event.key === "Escape") {
+                          setShowQuickSuggestions(false);
+                        }
+                      }}
+                    />
+                    {showQuickSuggestions && suggestedProducts.length > 0 && (
+                      <div className="suggestions-list">
+                        {suggestedProducts.map((p, index) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={`suggestion-item${index === highlightedSuggestionIndex ? " active" : ""}`}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => selectQuickSuggestion(p)}
+                          >
+                            {p.name}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </label>
                   <div className="quick-add-grid">
