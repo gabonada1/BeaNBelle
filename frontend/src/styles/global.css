@@ -399,6 +399,43 @@ input[readonly] {
   padding: 0 7px;
 }
 
+/* Payment UI helpers */
+.multi-select-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.multi-select-chips .chip {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.multi-select-chips .chip.selected {
+  background: var(--rose-900);
+  color: #fff;
+  border-color: var(--rose-900);
+}
+.selected-text small {
+  color: var(--muted);
+  display: block;
+  margin-top: 6px;
+}
+.info-note {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border-left: 3px solid rgba(130, 38, 77, 0.12);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.split-note input {
+  min-height: 40px;
+}
+
 .page-grid {
   display: grid;
   gap: 18px;
