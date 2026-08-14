@@ -17,6 +17,9 @@ import {
   createProduct,
   createRefund,
   createSale,
+  deleteSale,
+  updateUser,
+  deleteUser,
   createStockMovement,
   createStockTransfer,
   createUser,
@@ -171,6 +174,16 @@ export default function App() {
     await refreshStore(selectedBranchId);
   }
 
+  async function handleDeleteSale(saleId) {
+    try {
+      await deleteSale(session.token, saleId);
+      if (lastReceipt?.id === saleId) setLastReceipt(null);
+      await refreshStore(selectedBranchId);
+    } catch (error) {
+      setPageError(error.message);
+    }
+  }
+
   function handleBranchChange(branchId) {
     if (session.role !== "admin") {
       setSelectedBranchId(session.branchId);
@@ -227,6 +240,24 @@ export default function App() {
     await loadUsers();
   }
 
+  async function handleUpdateUser(userId, update) {
+    try {
+      await updateUser(session.token, userId, update);
+      await loadUsers();
+    } catch (error) {
+      setPageError(error.message);
+    }
+  }
+
+  async function handleDeleteUser(userId) {
+    try {
+      await deleteUser(session.token, userId);
+      await loadUsers();
+    } catch (error) {
+      setPageError(error.message);
+    }
+  }
+
   return (
     <DashboardLayout
       activeTab={activeTab}
@@ -260,6 +291,7 @@ export default function App() {
           selectedBranchId={selectedBranchId}
           lastReceipt={lastReceipt}
           onRecordSale={handleRecordSale}
+          onDeleteSale={handleDeleteSale}
         />
       )}
       {activeTab === "stocks" && (
@@ -318,6 +350,9 @@ export default function App() {
           users={users}
           onAddUser={handleAddUser}
           onLoadUsers={loadUsers}
+          onUpdateUser={handleUpdateUser}
+          onDeleteUser={handleDeleteUser}
+          session={session}
         />
       )}
     </DashboardLayout>

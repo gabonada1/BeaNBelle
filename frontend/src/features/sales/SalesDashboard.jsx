@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
 
-export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary, onRecordSale }) {
+export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary, onRecordSale, onDeleteSale }) {
   const [productId, setProductId] = useState(summary.inventory[0]?.id ?? "");
   const [quickQuantity, setQuickQuantity] = useState(1);
   const [priceType, setPriceType] = useState("retail");
@@ -11,7 +11,7 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
   const [saleType, setSaleType] = useState("");
   const [overridePrice, setOverridePrice] = useState("");
   const [channel, setChannel] = useState("In store");
-  const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [paymentMethod, setPaymentMethod] = useState(["Cash"]);
   const [lineItems, setLineItems] = useState([]);
   const [cartSearch, setCartSearch] = useState("");
   const [message, setMessage] = useState("");
@@ -315,14 +315,17 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
                     </select>
                   </label>
                   <label className="field">
-                    <span>Payment method</span>
-                    <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
-                      <option>Cash</option>
-                      <option>GCash</option>
-                      <option>Card</option>
-                      <option>Bank Transfer</option>
-                      <option>Online Payment</option>
+                    <span>Payment method (hold Ctrl/Cmd to select multiple)</span>
+                    <select multiple value={paymentMethod} onChange={(event) => setPaymentMethod(Array.from(event.target.selectedOptions).map((o) => o.value))}>
+                      <option value="Cash">Cash</option>
+                      <option value="GCash">GCash</option>
+                      <option value="Card">Card</option>
+                      <option value="Bank Transfer">Bank Transfer</option>
+                      <option value="Online Payment">Online Payment</option>
                     </select>
+                    {Array.isArray(paymentMethod) && paymentMethod.includes("Cash") && paymentMethod.includes("GCash") && (
+                      <p className="info-note">Note: Split payment selected (Cash + GCash). Confirm split amounts if applicable.</p>
+                    )}
                   </label>
                   <div className="totals-stack">
                     <div>
@@ -362,7 +365,7 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
             <div className="receipt-meta">
               <span>Branch: <strong>{employeeBranchName}</strong></span>
               <span>Employee: <strong>{lastReceipt.employee}</strong></span>
-              <span>Payment: <strong>{lastReceipt.paymentMethod ?? "Cash"}</strong></span>
+              <span>Payment: <strong>{Array.isArray(lastReceipt.paymentMethod) ? lastReceipt.paymentMethod.join(", ") : lastReceipt.paymentMethod ?? "Cash"}</strong></span>
             </div>
             <div className="receipt-list compact">
               <div className="receipt-list-heading">
@@ -408,6 +411,7 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
                 <th>Payment</th>
                 <th>Qty</th>
                 <th>Total Price</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -419,9 +423,23 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
                   <td>{sale.employee ?? "Branch Staff"}</td>
                   <td>{sale.channel}</td>
                     <td>{sale.saleType ?? "-"}</td>
-                  <td>{sale.paymentMethod ?? "Cash"}</td>
+                  <td>{Array.isArray(sale.paymentMethod) ? sale.paymentMethod.join(", ") : sale.paymentMethod ?? "Cash"}</td>
                   <td>{sale.items}</td>
                   <td>{formatCurrency(sale.amount)}</td>
+                  <td>
+                    {onDeleteSale && (session.role === "admin" || sale.branchId === session.branchId) && (
+                      <button
+                        className="icon-chip danger"
+                        onClick={() => {
+                          if (!confirm(`Delete sale ${sale.id}? This will restore sold stock to the branch.`)) return;
+                          onDeleteSale(sale.id);
+                        }}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

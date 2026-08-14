@@ -241,6 +241,12 @@ async function handleUsers(request, parts, context) {
     return found(user, "User not found.", (value) => ({ user: serializeUser(value) }));
   }
 
+  if (request.method === "DELETE" && parts.length === 3) {
+    const userId = parts[2];
+    const deleted = await db.collection("users").findOneAndDelete({ _id: new ObjectId(userId) });
+    return found(deleted.value, "User not found.", (value) => ({ user: serializeUser(value) }));
+  }
+
   return methodNotAllowed();
 }
 
@@ -548,6 +554,36 @@ async function handleSales(request, parts, context) {
 
     return { status: 201, body: { sale: serializeSale(sale) } };
   }
+
+      if (request.method === "DELETE" && parts.length === 3) {
+        const saleId = parts[2];
+        const sale = await db.collection("sales").findOne({ id: saleId });
+        if (!sale) return { status: 404, body: { error: "Sale not found." } };
+        if (context.user.role !== "owner" && sale.branchId !== context.user.branchId) {
+          return { status: 403, body: { error: "Cannot delete another branch sale." } };
+        }
+
+        const client = await getClient();
+        const session = client.startSession();
+
+        try {
+          await session.withTransaction(async () => {
+            for (const item of sale.lineItems ?? []) {
+              await db.collection("products").updateOne(
+                { id: item.productId },
+                { $inc: { [`stock.${sale.branchId}`]: toNumber(item.quantity) }, $set: { updatedAt: new Date() } },
+                { session }
+              );
+            }
+
+            await db.collection("sales").deleteOne({ id: saleId }, { session });
+          });
+        } finally {
+          await session.endSession();
+        }
+
+        return { status: 200, body: { deleted: true } };
+      }
 
   return methodNotAllowed();
 }

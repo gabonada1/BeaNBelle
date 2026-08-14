@@ -28,6 +28,21 @@ export function createUser(token, user) {
   });
 }
 
+export function updateUser(token, userId, user) {
+  return apiRequest(`/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    headers: authHeaders(token),
+    body: JSON.stringify(user)
+  });
+}
+
+export function deleteUser(token, userId) {
+  return apiRequest(`/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    headers: authHeaders(token)
+  });
+}
+
 export function getSummary(token, branchId) {
   return apiRequest(`/reports/summary?branchId=${encodeURIComponent(branchId)}`, {
     headers: authHeaders(token)
@@ -78,6 +93,13 @@ export function createSale(token, sale) {
     method: "POST",
     headers: authHeaders(token),
     body: JSON.stringify(sale)
+  });
+}
+
+export function deleteSale(token, saleId) {
+  return apiRequest(`/sales/${encodeURIComponent(saleId)}`, {
+    method: "DELETE",
+    headers: authHeaders(token)
   });
 }
 

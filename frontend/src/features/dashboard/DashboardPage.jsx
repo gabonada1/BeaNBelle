@@ -144,7 +144,7 @@ export function DashboardPage({ branches, session, summary }) {
             {recentSales.map((sale) => (
               <article className="history-row compact-history" key={sale.id}>
                 <strong>{sale.productName ?? "Walk-in sale"}</strong>
-                <span>{formatDate(sale.date)} - {sale.employee} - {sale.paymentMethod ?? "Cash"}</span>
+                <span>{formatDate(sale.date)} - {sale.employee} - {Array.isArray(sale.paymentMethod) ? sale.paymentMethod.join(", ") : sale.paymentMethod ?? "Cash"}</span>
                 <span>{sale.items} items - {formatCurrency(sale.amount)}</span>
               </article>
             ))}

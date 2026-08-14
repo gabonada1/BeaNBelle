@@ -65,7 +65,7 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
       date: sale.date,
       saleId: sale.id,
       employee: sale.employee ?? "Branch Staff",
-      paymentMethod: sale.paymentMethod ?? "Cash",
+      paymentMethod: Array.isArray(sale.paymentMethod) ? sale.paymentMethod.join(", ") : sale.paymentMethod ?? "Cash",
       priceType: item.priceType === "reseller" ? "Reseller" : "Retail",
       saleType: item.saleType ?? sale.saleType ?? null,
       productName: item.productName,

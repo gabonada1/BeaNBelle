@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-export function UsersPage({ branches, onAddUser, onLoadUsers, users }) {
+export function UsersPage({ branches, onAddUser, onLoadUsers, users, onUpdateUser, onDeleteUser, session }) {
   const [form, setForm] = useState({
     name: "",
     username: "",
@@ -8,6 +8,8 @@ export function UsersPage({ branches, onAddUser, onLoadUsers, users }) {
     role: "employee",
     branchId: branches[0]?.id ?? ""
   });
+  const [editingUserId, setEditingUserId] = useState("");
+  const [editMessage, setEditMessage] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -27,7 +29,23 @@ export function UsersPage({ branches, onAddUser, onLoadUsers, users }) {
     setError("");
 
     try {
-      await onAddUser(form);
+      if (editingUserId) {
+        const update = {
+          name: form.name,
+          role: form.role
+        };
+
+        if (form.role !== "owner") update.branchId = form.branchId;
+        if (form.password) update.password = form.password;
+
+        await onUpdateUser(editingUserId, update);
+        setEditMessage("User updated.");
+        setEditingUserId("");
+      } else {
+        await onAddUser(form);
+        setMessage("User account created.");
+      }
+
       setForm({
         name: "",
         username: "",
@@ -35,9 +53,40 @@ export function UsersPage({ branches, onAddUser, onLoadUsers, users }) {
         role: "employee",
         branchId: branches[0]?.id ?? ""
       });
-      setMessage("User account created.");
     } catch (requestError) {
       setError(requestError.message);
+    }
+  }
+
+  function startEdit(user) {
+    setEditingUserId(user._id ?? user.id ?? "");
+    setForm({
+      name: user.name ?? "",
+      username: user.username ?? "",
+      password: "",
+      role: user.role ?? "employee",
+      branchId: user.branchId ?? branches[0]?.id ?? ""
+    });
+    setMessage("");
+    setError("");
+    setEditMessage("");
+  }
+
+  async function handleDelete(user) {
+    if (!onDeleteUser) return;
+    if (user.username === session.userName) {
+      setError("You cannot delete the currently logged-in user.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete user ${user.name} (${user.username})?`);
+    if (!confirmed) return;
+
+    try {
+      await onDeleteUser(user._id ?? user.id);
+      setEditMessage("User deleted.");
+    } catch (err) {
+      setError(err.message);
     }
   }
 
@@ -64,7 +113,7 @@ export function UsersPage({ branches, onAddUser, onLoadUsers, users }) {
           </label>
           <label className="field">
             <span>Password</span>
-            <input placeholder="Temporary password" type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+            <input placeholder={editingUserId ? "Leave blank to keep current" : "Temporary password"} type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
           </label>
           <label className="field">
             <span>Role</span>
@@ -86,9 +135,15 @@ export function UsersPage({ branches, onAddUser, onLoadUsers, users }) {
               ))}
             </select>
           </label>
-          <button className="primary-button" disabled={branches.length === 0 && form.role !== "owner"} type="submit">Create user</button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="primary-button" disabled={branches.length === 0 && form.role !== "owner"} type="submit">{editingUserId ? 'Save user' : 'Create user'}</button>
+            {editingUserId && (
+              <button className="secondary-button" type="button" onClick={() => { setEditingUserId(""); setForm({ name: "", username: "", password: "", role: "employee", branchId: branches[0]?.id ?? "" }); setEditMessage(""); }}>Cancel</button>
+            )}
+          </div>
         </form>
         {message && <p className="success-message">{message}</p>}
+        {editMessage && <p className="success-message">{editMessage}</p>}
         {error && <p className="error-message">{error}</p>}
       </section>
 
@@ -101,12 +156,18 @@ export function UsersPage({ branches, onAddUser, onLoadUsers, users }) {
         </div>
         <div className="card-list">
           {users.map((user) => (
-            <article className="entity-card" key={user.id}>
-              <div className="entity-avatar">{user.name.slice(0, 2).toUpperCase()}</div>
+            <article className="entity-card" key={user.id ?? user._id}>
+              <div className="entity-avatar">{(user.name ?? "").slice(0, 2).toUpperCase()}</div>
               <div>
                 <strong>{user.name}</strong>
                 <span>{user.username} - {user.role}</span>
                 <span>{user.role === "owner" ? "All branches" : branches.find((branch) => branch.id === user.branchId)?.name ?? "No branch"}</span>
+              </div>
+              <div className="entity-actions">
+                <button className="secondary-button" type="button" onClick={() => startEdit(user)}>Edit</button>
+                {onDeleteUser && session?.role === "admin" && (
+                  <button className="icon-chip danger" type="button" onClick={() => handleDelete(user)}>Delete</button>
+                )}
               </div>
             </article>
           ))}
