@@ -11,7 +11,8 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
   const [saleType, setSaleType] = useState("");
   const [overridePrice, setOverridePrice] = useState("");
   const [channel, setChannel] = useState("In store");
-  const [paymentMethod, setPaymentMethod] = useState(["Cash"]);
+  const [paymentMethod, setPaymentMethod] = useState("Cash");
+  const [paymentNote, setPaymentNote] = useState("");
   const [lineItems, setLineItems] = useState([]);
   const [cartSearch, setCartSearch] = useState("");
   const [message, setMessage] = useState("");
@@ -140,6 +141,7 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
       saleType: saleType || undefined,
       lineItems,
       paymentMethod,
+      paymentNote: paymentMethod === "Cash + GCash" ? paymentNote : undefined,
       productName: lineItems.map((item) => item.productName).join(", ")
     });
 
@@ -316,37 +318,24 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
                   </label>
                   <label className="field">
                     <span>Payment method</span>
-                    <div className="multi-select-chips">
-                      {[
-                        "Cash",
-                        "GCash",
-                        "Card",
-                        "Bank Transfer",
-                        "Online Payment",
-                      ].map((opt) => (
-                        <button
-                          key={opt}
-                          type="button"
-                          className={`chip ${Array.isArray(paymentMethod) && paymentMethod.includes(opt) ? "selected" : ""}`}
-                          onClick={() => {
-                            setPaymentMethod((prev) => {
-                              const arr = Array.isArray(prev) ? prev.slice() : [];
-                              if (arr.includes(opt)) return arr.filter((p) => p !== opt);
-                              return [...arr, opt];
-                            });
-                          }}
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                    {Array.isArray(paymentMethod) && paymentMethod.length > 0 && (
-                      <div className="selected-text">
-                        <small>Selected: {paymentMethod.join(" + ")}</small>
+                    <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}>
+                      <option value="Cash">Cash</option>
+                      <option value="GCash">GCash</option>
+                      <option value="Card">Card</option>
+                      <option value="Bank Transfer">Bank Transfer</option>
+                      <option value="Online Payment">Online Payment</option>
+                      <option value="Cash + GCash">Cash + GCash</option>
+                    </select>
+                    {paymentMethod === "Cash + GCash" && (
+                      <div className="field">
+                        <span>Split payment note</span>
+                        <input
+                          placeholder="Enter split amounts or note"
+                          value={paymentNote}
+                          onChange={(event) => setPaymentNote(event.target.value)}
+                        />
+                        <p className="info-note">Note: Split payment selected (Cash + GCash). Confirm split amounts if applicable.</p>
                       </div>
-                    )}
-                    {Array.isArray(paymentMethod) && paymentMethod.includes("Cash") && paymentMethod.includes("GCash") && (
-                      <p className="info-note">Note: Split payment selected (Cash + GCash). Confirm split amounts if applicable.</p>
                     )}
                   </label>
                   <div className="totals-stack">
