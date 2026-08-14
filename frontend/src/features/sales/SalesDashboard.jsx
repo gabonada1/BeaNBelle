@@ -315,14 +315,36 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
                     </select>
                   </label>
                   <label className="field">
-                    <span>Payment method (hold Ctrl/Cmd to select multiple)</span>
-                    <select multiple value={paymentMethod} onChange={(event) => setPaymentMethod(Array.from(event.target.selectedOptions).map((o) => o.value))}>
-                      <option value="Cash">Cash</option>
-                      <option value="GCash">GCash</option>
-                      <option value="Card">Card</option>
-                      <option value="Bank Transfer">Bank Transfer</option>
-                      <option value="Online Payment">Online Payment</option>
-                    </select>
+                    <span>Payment method</span>
+                    <div className="multi-select-chips">
+                      {[
+                        "Cash",
+                        "GCash",
+                        "Card",
+                        "Bank Transfer",
+                        "Online Payment",
+                      ].map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          className={`chip ${Array.isArray(paymentMethod) && paymentMethod.includes(opt) ? "selected" : ""}`}
+                          onClick={() => {
+                            setPaymentMethod((prev) => {
+                              const arr = Array.isArray(prev) ? prev.slice() : [];
+                              if (arr.includes(opt)) return arr.filter((p) => p !== opt);
+                              return [...arr, opt];
+                            });
+                          }}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                    {Array.isArray(paymentMethod) && paymentMethod.length > 0 && (
+                      <div className="selected-text">
+                        <small>Selected: {paymentMethod.join(" + ")}</small>
+                      </div>
+                    )}
                     {Array.isArray(paymentMethod) && paymentMethod.includes("Cash") && paymentMethod.includes("GCash") && (
                       <p className="info-note">Note: Split payment selected (Cash + GCash). Confirm split amounts if applicable.</p>
                     )}
