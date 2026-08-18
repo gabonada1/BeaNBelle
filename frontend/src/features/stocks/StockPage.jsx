@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { formatCurrency } from "../../utils/formatters.js";
+import { getCompactPagination } from "../../utils/pagination.js";
 
 export function StockPage({ branches, session, summary, onRecordSale }) {
   const [searchInput, setSearchInput] = useState("");
@@ -25,6 +26,7 @@ export function StockPage({ branches, session, summary, onRecordSale }) {
 
   const pageCount = Math.max(1, Math.ceil(filteredStocks.length / itemsPerPage));
   const pagedStocks = filteredStocks.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const pageNumbers = getCompactPagination(currentPage, pageCount);
 
   function handleSearch(event) {
     event.preventDefault();
@@ -167,7 +169,7 @@ export function StockPage({ branches, session, summary, onRecordSale }) {
                 <button className="secondary-button" type="button" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
                   Previous
                 </button>
-                {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
+                {pageNumbers.map((page) => typeof page === "number" ? (
                   <button
                     key={page}
                     className={page === currentPage ? "pagination-button active" : "pagination-button"}
@@ -176,6 +178,8 @@ export function StockPage({ branches, session, summary, onRecordSale }) {
                   >
                     {page}
                   </button>
+                ) : (
+                  <span className="pagination-ellipsis" key={page}>...</span>
                 ))}
                 <button className="secondary-button" type="button" onClick={() => setCurrentPage(Math.min(pageCount, currentPage + 1))} disabled={currentPage === pageCount}>
                   Next

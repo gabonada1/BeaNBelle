@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
+import { getCompactPagination } from "../../utils/pagination.js";
 import { SearchableItemSelect } from "./SearchableItemSelect.jsx";
 
 export function InventoryPage({
@@ -79,10 +80,10 @@ export function InventoryPage({
 
   const pageCount = Math.max(1, Math.ceil(filteredInventory.length / itemsPerPage));
   const pagedInventory = filteredInventory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  const pageNumbers = Array.from({ length: pageCount }, (_, index) => index + 1);
+  const pageNumbers = getCompactPagination(currentPage, pageCount);
   const historyPageCount = Math.max(1, Math.ceil(stockHistory.length / historyItemsPerPage));
   const pagedStockHistory = stockHistory.slice((historyPage - 1) * historyItemsPerPage, historyPage * historyItemsPerPage);
-  const historyPageNumbers = Array.from({ length: historyPageCount }, (_, index) => index + 1);
+  const historyPageNumbers = getCompactPagination(historyPage, historyPageCount);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -779,7 +780,7 @@ export function InventoryPage({
               <button className="secondary-button" type="button" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
                 Previous
               </button>
-              {pageNumbers.map((page) => (
+              {pageNumbers.map((page) => typeof page === "number" ? (
                 <button
                   key={page}
                   className={page === currentPage ? "pagination-button active" : "pagination-button"}
@@ -788,6 +789,8 @@ export function InventoryPage({
                 >
                   {page}
                 </button>
+              ) : (
+                <span className="pagination-ellipsis" key={page}>...</span>
               ))}
               <button className="secondary-button" type="button" onClick={() => setCurrentPage(Math.min(pageCount, currentPage + 1))} disabled={currentPage === pageCount}>
                 Next
@@ -887,7 +890,7 @@ export function InventoryPage({
                 <button className="secondary-button" type="button" onClick={() => setHistoryPage(Math.max(1, historyPage - 1))} disabled={historyPage === 1}>
                   Previous
                 </button>
-                {historyPageNumbers.map((page) => (
+                {historyPageNumbers.map((page) => typeof page === "number" ? (
                   <button
                     key={page}
                     className={page === historyPage ? "pagination-button active" : "pagination-button"}
@@ -896,6 +899,8 @@ export function InventoryPage({
                   >
                     {page}
                   </button>
+                ) : (
+                  <span className="pagination-ellipsis" key={page}>...</span>
                 ))}
                 <button className="secondary-button" type="button" onClick={() => setHistoryPage(Math.min(historyPageCount, historyPage + 1))} disabled={historyPage === historyPageCount}>
                   Next
