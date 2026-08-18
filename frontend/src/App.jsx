@@ -28,6 +28,7 @@ import {
   getBranches,
   getSummary,
   getUsers,
+  updateStockMovement,
   updateProduct
 } from "./services/storeApi.js";
 
@@ -230,6 +231,16 @@ export default function App() {
     }
   }
 
+  async function handleUpdateStockMovement(movementId, movement) {
+    try {
+      await updateStockMovement(session.token, movementId, movement);
+      await refreshStore(selectedBranchId);
+    } catch (error) {
+      setPageError(error.message);
+      throw error;
+    }
+  }
+
   async function handleRefund(refund) {
     await createRefund(session.token, refund);
     await refreshStore(selectedBranchId);
@@ -323,6 +334,7 @@ export default function App() {
           onDeleteProduct={handleDeleteProduct}
           onDeleteStockMovement={handleDeleteStockMovement}
           onTransferStock={handleTransferStock}
+          onUpdateStockMovement={handleUpdateStockMovement}
           onUpdateProduct={handleUpdateProduct}
         />
       )}

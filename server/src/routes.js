@@ -434,6 +434,75 @@ async function handleStockMovements(request, url, context) {
     return { status: 201, body: { stockMovement: serializeMovement(movement), product: serializeProduct(product) } };
   }
 
+  if (request.method === "PATCH" && url) {
+    const parts = getPathParts(url);
+    if (parts[1] === "stock-movements" && parts.length === 3) {
+      const movementId = parts[2];
+      const movement = await db.collection("stockMovements").findOne({ id: movementId });
+      if (!movement) return { status: 404, body: { error: "Stock movement not found." } };
+      if ((movement.type ?? "stock-in") === "transfer") {
+        return { status: 400, body: { error: "Transfer records cannot be edited from stock-in history." } };
+      }
+
+      const body = await readJson(request);
+      const branchId = context.user.role === "owner" ? (body.branchId ?? movement.branchId) : context.user.branchId;
+      const productId = body.productId ?? movement.productId;
+      const quantity = body.quantity === undefined ? toNumber(movement.quantity) : toNumber(body.quantity);
+
+      if (context.user.role !== "owner" && movement.branchId !== context.user.branchId) {
+        return { status: 403, body: { error: "Cannot edit another branch stock movement." } };
+      }
+
+      if (!branchId) return { status: 400, body: { error: "Branch is required." } };
+      if (quantity < 1) return { status: 400, body: { error: "Quantity must be at least 1." } };
+
+      const product = await db.collection("products").findOne({ id: productId, active: { $ne: false } });
+      if (!product) return { status: 404, body: { error: "Product not found." } };
+
+      const client = await getClient();
+      const session = client.startSession();
+      let updatedMovement;
+
+      try {
+        await session.withTransaction(async () => {
+          await db.collection("products").updateOne(
+            { id: movement.productId },
+            { $inc: { [`stock.${movement.branchId}`]: -toNumber(movement.quantity) }, $set: { updatedAt: new Date() } },
+            { session }
+          );
+
+          await db.collection("products").updateOne(
+            { id: productId },
+            { $inc: { [`stock.${branchId}`]: quantity }, $set: { updatedAt: new Date() } },
+            { session }
+          );
+
+          const unitCost = body.unitCost === undefined ? toNumber(movement.unitCost, toNumber(product.costPrice)) : toNumber(body.unitCost);
+          const update = {
+            branchId,
+            productId,
+            productName: product.name,
+            quantity,
+            unitCost,
+            purchaseTotal: unitCost * quantity,
+            source: body.source?.trim() || movement.source || "Stock-in",
+            updatedAt: new Date()
+          };
+
+          updatedMovement = await db.collection("stockMovements").findOneAndUpdate(
+            { id: movementId },
+            { $set: update },
+            { returnDocument: "after", session }
+          );
+        });
+      } finally {
+        await session.endSession();
+      }
+
+      return found(updatedMovement, "Stock movement not found.", (value) => ({ stockMovement: serializeMovement(value) }));
+    }
+  }
+
   if (request.method === "DELETE" && url) {
     const parts = getPathParts(url);
     if (parts[1] === "stock-movements" && parts.length === 3) {
@@ -445,10 +514,23 @@ async function handleStockMovements(request, url, context) {
         return { status: 403, body: { error: "Cannot delete another branch stock movement." } };
       }
 
-      await db.collection("products").updateOne(
-        { id: movement.productId },
-        { $inc: { [`stock.${movement.branchId}`]: -toNumber(movement.quantity) }, $set: { updatedAt: new Date() } }
-      );
+      if ((movement.type ?? "stock-in") === "transfer") {
+        await db.collection("products").updateOne(
+          { id: movement.productId },
+          {
+            $inc: {
+              [`stock.${movement.fromBranchId}`]: toNumber(movement.quantity),
+              [`stock.${movement.toBranchId}`]: -toNumber(movement.quantity)
+            },
+            $set: { updatedAt: new Date() }
+          }
+        );
+      } else {
+        await db.collection("products").updateOne(
+          { id: movement.productId },
+          { $inc: { [`stock.${movement.branchId}`]: -toNumber(movement.quantity) }, $set: { updatedAt: new Date() } }
+        );
+      }
 
       await db.collection("stockMovements").deleteOne({ id: movementId });
       return { status: 200, body: { deleted: true } };

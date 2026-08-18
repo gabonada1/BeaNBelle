@@ -80,6 +80,14 @@ export function createStockMovement(token, movement) {
   });
 }
 
+export function updateStockMovement(token, movementId, movement) {
+  return apiRequest(`/stock-movements/${encodeURIComponent(movementId)}`, {
+    method: "PATCH",
+    headers: authHeaders(token),
+    body: JSON.stringify(movement)
+  });
+}
+
 export function deleteStockMovement(token, movementId) {
   return apiRequest(`/stock-movements/${encodeURIComponent(movementId)}`, {
     method: "DELETE",

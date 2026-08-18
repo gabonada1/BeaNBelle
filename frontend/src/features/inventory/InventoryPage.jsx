@@ -12,6 +12,7 @@ export function InventoryPage({
   onDeleteProduct,
   onDeleteStockMovement,
   onTransferStock,
+  onUpdateStockMovement,
   onUpdateProduct
 }) {
   const [movementCategory, setMovementCategory] = useState(summary.inventory[0]?.category ?? "");
@@ -31,6 +32,7 @@ export function InventoryPage({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [editingProductId, setEditingProductId] = useState("");
+  const [editingMovementId, setEditingMovementId] = useState("");
   const [editForm, setEditForm] = useState({
     category: "",
     costPrice: "",
@@ -39,6 +41,12 @@ export function InventoryPage({
     resellerPrice: "",
     retailPrice: "",
     sku: ""
+  });
+  const [movementEditForm, setMovementEditForm] = useState({
+    branchId: "",
+    productId: "",
+    quantity: "",
+    source: ""
   });
   const [productForm, setProductForm] = useState({
     branchId: session.role === "admin" ? branches[0]?.id : session.branchId,
@@ -392,6 +400,60 @@ export function InventoryPage({
         setEditingProductId("");
       }
       setMessage("Product deleted.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  function startEditingMovement(record) {
+    setEditingMovementId(record.id);
+    setMovementEditForm({
+      branchId: record.branchId ?? "",
+      productId: record.productId ?? "",
+      quantity: String(record.quantity ?? ""),
+      source: record.source ?? ""
+    });
+    setMessage("");
+  }
+
+  async function handleUpdateStockMovement(event) {
+    event.preventDefault();
+
+    if (!movementEditForm.productId) {
+      setMessage("Choose an item for this stock-in record.");
+      return;
+    }
+
+    if (Number(movementEditForm.quantity) < 1) {
+      setMessage("Quantity must be at least 1.");
+      return;
+    }
+
+    try {
+      await onUpdateStockMovement?.(editingMovementId, {
+        ...movementEditForm,
+        branchId: session.role === "admin" ? movementEditForm.branchId : session.branchId
+      });
+      setEditingMovementId("");
+      setMessage("Stock-in record updated.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function handleDeleteMovement(record) {
+    const confirmed = window.confirm(`Delete stock-in record for ${record.productName}?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await onDeleteStockMovement?.(record.id);
+      if (editingMovementId === record.id) {
+        setEditingMovementId("");
+      }
+      setMessage("Stock-in record deleted.");
     } catch (error) {
       setMessage(error.message);
     }
@@ -789,19 +851,68 @@ export function InventoryPage({
         <div className="history-list">
           {stockHistory.map((record) => (
             <article className="history-row" key={record.id}>
-              <strong>{record.productName}</strong>
-              <span>
-                {formatDate(record.date)} - {record.quantity} {record.type === "transfer" ? "transferred" : "added"} - {record.source}
-                {record.purchaseTotal ? ` - Purchase ${formatCurrency(record.purchaseTotal)}` : ""}
-              </span>
-              <span>
-                {record.type === "transfer"
-                  ? `${branches.find((branch) => branch.id === record.fromBranchId)?.name ?? record.fromBranchId} to ${branches.find((branch) => branch.id === record.toBranchId)?.name ?? record.toBranchId}`
-                  : branches.find((branch) => branch.id === record.branchId)?.name} - {record.employee}
-              </span>
-              <div className="product-actions">
-                <button className="danger-button" type="button" onClick={() => onDeleteStockMovement?.(record.id)}>Delete</button>
-              </div>
+              {editingMovementId === record.id ? (
+                <form className="stock-movement-edit-form" onSubmit={handleUpdateStockMovement}>
+                  <SearchableItemSelect
+                    label="Item"
+                    value={movementEditForm.productId}
+                    onChange={(productId) => setMovementEditForm({ ...movementEditForm, productId })}
+                    items={summary.inventory}
+                    placeholder="Search items..."
+                  />
+                  <label className="field">
+                    <span>Branch</span>
+                    <select
+                      value={session.role === "admin" ? movementEditForm.branchId : session.branchId}
+                      onChange={(event) => setMovementEditForm({ ...movementEditForm, branchId: event.target.value })}
+                      disabled={session.role !== "admin"}
+                    >
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>{branch.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Quantity</span>
+                    <input
+                      min="1"
+                      type="number"
+                      value={movementEditForm.quantity}
+                      onChange={(event) => setMovementEditForm({ ...movementEditForm, quantity: event.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Supplier / Source</span>
+                    <input
+                      value={movementEditForm.source}
+                      onChange={(event) => setMovementEditForm({ ...movementEditForm, source: event.target.value })}
+                    />
+                  </label>
+                  <div className="product-actions">
+                    <button className="primary-button" type="submit">Save</button>
+                    <button className="secondary-button" onClick={() => setEditingMovementId("")} type="button">Cancel</button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <strong>{record.productName}</strong>
+                  <span>
+                    {formatDate(record.date)} - {record.quantity} {record.type === "transfer" ? "transferred" : "added"} - {record.source}
+                    {record.purchaseTotal ? ` - Purchase ${formatCurrency(record.purchaseTotal)}` : ""}
+                  </span>
+                  <span>
+                    {record.type === "transfer"
+                      ? `${branches.find((branch) => branch.id === record.fromBranchId)?.name ?? record.fromBranchId} to ${branches.find((branch) => branch.id === record.toBranchId)?.name ?? record.toBranchId}`
+                      : branches.find((branch) => branch.id === record.branchId)?.name} - {record.employee}
+                  </span>
+                  <div className="product-actions">
+                    {record.type !== "transfer" && (
+                      <button className="secondary-button" type="button" onClick={() => startEditingMovement(record)}>Edit</button>
+                    )}
+                    <button className="danger-button" type="button" onClick={() => handleDeleteMovement(record)}>Delete</button>
+                  </div>
+                </>
+              )}
             </article>
           ))}
           {stockHistory.length === 0 && <p className="empty-state">No stock-in history yet.</p>}
