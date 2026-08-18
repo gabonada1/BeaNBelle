@@ -1382,6 +1382,41 @@ tbody tr:hover {
   grid-template-columns: 1fr 110px;
 }
 
+.inventory-page {
+  grid-auto-flow: row dense;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.inventory-page > section:nth-of-type(1) {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.inventory-page > section:nth-of-type(2) {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.inventory-page > section:nth-of-type(3) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.inventory-page > section:nth-of-type(4) {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+.inventory-page > section:nth-of-type(5) {
+  grid-column: 1 / -1;
+  grid-row: 4;
+}
+
+.inventory-page > section:nth-of-type(6) {
+  grid-column: 1 / -1;
+  grid-row: 5;
+}
+
 .search-field {
   display: grid;
 }
@@ -1593,6 +1628,11 @@ tbody tr:hover {
   .app-shell,
   .two-column {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-page > section {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
   }
 
   .sidebar {

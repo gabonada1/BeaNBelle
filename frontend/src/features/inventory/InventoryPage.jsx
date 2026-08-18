@@ -24,7 +24,6 @@ export function InventoryPage({
   const [transferQuantity, setTransferQuantity] = useState("");
   const [transferNote, setTransferNote] = useState("");
   const [stockQuantity, setStockQuantity] = useState("");
-  const [stockUnitCost, setStockUnitCost] = useState("");
   const [stockSource, setStockSource] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -50,7 +49,6 @@ export function InventoryPage({
   });
   const [bulkStockItems, setBulkStockItems] = useState([]);
   const [bulkStockForm, setBulkStockForm] = useState({
-    unitCost: "",
     source: ""
   });
   const [selectedProductForBulk, setSelectedProductForBulk] = useState("");
@@ -159,7 +157,6 @@ export function InventoryPage({
           branchId: branch.id,
           productId: movementProductId,
           quantity: branch.id === movementBranchId ? stockQuantity : "",
-          unitCost: stockUnitCost,
           source: stockSource
         }))
         .filter((item) => item.quantity !== "" && Number(item.quantity) > 0);
@@ -171,7 +168,6 @@ export function InventoryPage({
 
       onAddStock({ items });
       setStockQuantity("");
-      setStockUnitCost("");
       setStockSource("");
       setMessage("Stock-in record saved for all selected branches.");
       return;
@@ -181,11 +177,9 @@ export function InventoryPage({
       branchId: session.branchId,
       productId: movementProductId,
       quantity: stockQuantity,
-      unitCost: stockUnitCost,
       source: stockSource
     });
     setStockQuantity("");
-    setStockUnitCost("");
     setStockSource("");
     setMessage("Stock-in record saved.");
   }
@@ -203,6 +197,7 @@ export function InventoryPage({
       id: Date.now(),
       productId: selectedProductForBulk,
       productName: product?.name ?? "",
+      totalQuantity: "",
       quantityByBranch: Object.fromEntries((branches || []).map((branch) => [branch.id, ""]))
     };
 
@@ -214,6 +209,42 @@ export function InventoryPage({
     setBulkStockItems(bulkStockItems.filter((item) => item.id !== itemId));
   }
 
+  function handleUpdateBulkItemTotal(itemId, value) {
+    setBulkStockItems(
+      bulkStockItems.map((item) => {
+        if (item.id !== itemId) {
+          return item;
+        }
+
+        if (value === "") {
+          return {
+            ...item,
+            totalQuantity: "",
+            quantityByBranch: Object.fromEntries((branches || []).map((branch) => [branch.id, ""]))
+          };
+        }
+
+        const total = Math.max(0, Number(value) || 0);
+        const branchCount = branches.length || 1;
+        const base = Math.floor(total / branchCount);
+        let remainder = total % branchCount;
+
+        const quantityByBranch = {};
+        branches.forEach((branch) => {
+          const extra = remainder > 0 ? 1 : 0;
+          quantityByBranch[branch.id] = String(base + extra);
+          remainder -= extra;
+        });
+
+        return {
+          ...item,
+          totalQuantity: String(total),
+          quantityByBranch
+        };
+      })
+    );
+  }
+
   function handleUpdateBulkItemQuantity(itemId, branchId, value) {
     setBulkStockItems(
       bulkStockItems.map((item) =>
@@ -223,7 +254,10 @@ export function InventoryPage({
               quantityByBranch: {
                 ...item.quantityByBranch,
                 [branchId]: value
-              }
+              },
+              totalQuantity: String(
+                branches.reduce((total, branch) => total + Number(branch.id === branchId ? value : item.quantityByBranch?.[branch.id] ?? 0), 0)
+              )
             }
           : item
       )
@@ -239,7 +273,7 @@ export function InventoryPage({
     }
 
     const items = [];
-    bulkStockItems.forEach((item) => {
+          bulkStockItems.forEach((item) => {
       branches.forEach((branch) => {
         const quantity = item.quantityByBranch?.[branch.id];
         if (quantity !== "" && Number(quantity) > 0) {
@@ -247,7 +281,6 @@ export function InventoryPage({
             branchId: branch.id,
             productId: item.productId,
             quantity: quantity,
-            unitCost: bulkStockForm.unitCost,
             source: bulkStockForm.source
           });
         }
@@ -263,7 +296,6 @@ export function InventoryPage({
 
     setBulkStockItems([]);
     setBulkStockForm({
-      unitCost: "",
       source: ""
     });
     setSelectedProductForBulk("");
@@ -366,7 +398,7 @@ export function InventoryPage({
   }
 
   return (
-    <div className="page-grid two-column">
+    <div className="page-grid two-column inventory-page">
       <section className="panel">
         <div className="panel-heading">
           <h3>Stock-In</h3>
@@ -417,10 +449,6 @@ export function InventoryPage({
             <input min="1" placeholder="0" type="number" value={stockQuantity} onChange={(event) => setStockQuantity(event.target.value)} />
           </label>
           <label className="field">
-            <span>Purchase cost each</span>
-            <input min="0" placeholder="0" type="number" value={stockUnitCost} onChange={(event) => setStockUnitCost(event.target.value)} />
-          </label>
-          <label className="field">
             <span>Supplier / Source</span>
             <input placeholder="Supplier, transfer, delivery" value={stockSource} onChange={(event) => setStockSource(event.target.value)} />
           </label>
@@ -463,6 +491,7 @@ export function InventoryPage({
                 <thead>
                   <tr>
                     <th style={{ minWidth: 200 }}>Item</th>
+                    <th style={{ width: 96 }}>Total</th>
                     {branches.map((branch) => (
                       <th key={branch.id} style={{ textAlign: "center", width: 80 }}>
                         {branch.name}
@@ -475,6 +504,22 @@ export function InventoryPage({
                   {bulkStockItems.map((item) => (
                     <tr key={item.id}>
                       <td style={{ fontWeight: 500 }}>{item.productName}</td>
+                      <td style={{ textAlign: "center" }}>
+                        <input
+                          min="0"
+                          placeholder="0"
+                          type="number"
+                          value={item.totalQuantity}
+                          onChange={(event) => handleUpdateBulkItemTotal(item.id, event.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: 6,
+                            border: "1px solid #ddd",
+                            borderRadius: 4,
+                            textAlign: "center"
+                          }}
+                        />
+                      </td>
                       {branches.map((branch) => (
                         <td key={branch.id} style={{ textAlign: "center" }}>
                           <input
@@ -510,16 +555,7 @@ export function InventoryPage({
             </div>
           )}
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-            <label className="field">
-              <span>Purchase cost each</span>
-              <input
-                min="0"
-                type="number"
-                value={bulkStockForm.unitCost}
-                onChange={(event) => setBulkStockForm({ ...bulkStockForm, unitCost: event.target.value })}
-              />
-            </label>
+          <div style={{ marginBottom: 16 }}>
             <label className="field">
               <span>Supplier / Source</span>
               <input

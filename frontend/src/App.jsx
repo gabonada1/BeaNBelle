@@ -337,10 +337,13 @@ export default function App() {
       )}
       {activeTab === "reports" && (
         <ReportsPage
+          branches={branches}
           refundRecords={summary.refunds}
+          selectedBranchId={selectedBranchId}
           session={session}
           stockHistory={summary.stockMovements}
           summary={summary}
+          onBranchChange={handleBranchChange}
         />
       )}
       {activeTab === "expenses" && (

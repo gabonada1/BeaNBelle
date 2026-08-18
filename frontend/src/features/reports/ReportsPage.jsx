@@ -1,16 +1,34 @@
 import React, { useMemo, useState } from "react";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
 
-export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
+export function ReportsPage({
+  branches,
+  refundRecords,
+  selectedBranchId,
+  session,
+  stockHistory,
+  summary,
+  onBranchChange
+}) {
   const today = new Date().toISOString().slice(0, 10);
+  const [reportType, setReportType] = useState("sales");
   const [reportPeriod, setReportPeriod] = useState("daily");
   const [reportDate, setReportDate] = useState(today);
-  const todaysSales = summary.recentSales.filter((sale) => sale.date === today);
-  const todaysTotal = todaysSales.reduce((total, sale) => total + sale.amount, 0);
+
+  const branchScopeId = session.role === "admin" ? selectedBranchId ?? "all" : session.branchId ?? summary.branchId ?? "all";
+  const branchScopeLabel = branchScopeId === "all"
+    ? "All branches"
+    : branches.find((branch) => branch.id === branchScopeId)?.name ?? summary.branchName ?? "Selected branch";
+  const visibleBranches = branchScopeId === "all"
+    ? branches
+    : branches.filter((branch) => branch.id === branchScopeId);
+
   const totalRevenue = summary.totalRevenue ?? summary.totalSales;
   const totalPurchases = summary.totalPurchases ?? stockHistory.reduce((total, record) => total + (record.purchaseTotal ?? 0), 0);
   const totalExpenses = summary.totalExpenses ?? 0;
   const netProfit = summary.netProfit ?? totalRevenue - totalPurchases - totalExpenses;
+  const todaysSales = summary.recentSales.filter((sale) => sale.date === today);
+  const todaysTotal = todaysSales.reduce((total, sale) => total + sale.amount, 0);
   const employeeSales = summary.recentSales.filter((sale) => sale.employee === session.userName);
   const productTotals = summary.recentSales.reduce((result, sale) => {
     (sale.lineItems ?? []).forEach((item) => {
@@ -19,36 +37,14 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
     return result;
   }, {});
   const bestSeller = Object.entries(productTotals).sort((a, b) => b[1] - a[1])[0];
-  const maxBranchTotal = Math.max(...summary.salesByBranch.map((branch) => branch.total), 1);
-  const lowStocks = summary.inventory.filter((product) => {
-    const count = summary.branchId === "all"
-      ? Object.values(product.stock).reduce((total, value) => total + value, 0)
-      : product.stock[summary.branchId];
 
-    return count <= 5;
-  });
-  const chartProducts = Object.entries(productTotals).slice(0, 5);
-  const maxProductQty = Math.max(...chartProducts.map(([, qty]) => qty), 1);
   const reportRange = useMemo(() => getReportRange(reportPeriod, reportDate), [reportDate, reportPeriod]);
   const filteredSales = summary.recentSales.filter((sale) => isWithinRange(sale.date, reportRange));
   const filteredStockMovements = stockHistory.filter((record) => isWithinRange(record.date, reportRange));
   const filteredPurchases = filteredStockMovements.filter((record) => record.type !== "transfer");
-  const filteredTransfers = filteredStockMovements.filter((record) => record.type === "transfer");
   const filteredRefunds = refundRecords.filter((refund) => isWithinRange(refund.date, reportRange));
   const filteredExpenses = (summary.expenses ?? summary.recentExpenses ?? []).filter((expense) => isWithinRange(expense.date, reportRange));
-  const inventoryRows = summary.inventory.map((product) => {
-    const stockCount = summary.branchId === "all"
-      ? Object.values(product.stock ?? {}).reduce((total, value) => total + Number(value ?? 0), 0)
-      : Number(product.stock?.[summary.branchId] ?? 0);
-    const retailPrice = Number(product.retailPrice ?? product.price ?? 0);
 
-    return {
-      ...product,
-      retailPrice,
-      stockCount,
-      stockValue: stockCount * retailPrice
-    };
-  });
   const detailedSalesItems = filteredSales.flatMap((sale) => {
     const lineItems = sale.lineItems?.length
       ? sale.lineItems
@@ -74,19 +70,20 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
       unitPrice: Number(item.unitPrice ?? 0)
     }));
   });
-  const filteredSalesTotal = filteredSales.reduce((total, sale) => total + (sale.amount ?? 0), 0);
-  const filteredRefundTotal = filteredRefunds.reduce((total, refund) => total + (refund.amount ?? 0), 0);
-  const filteredPurchaseTotal = filteredPurchases.reduce((total, record) => total + (record.purchaseTotal ?? 0), 0);
-  const filteredExpenseTotal = filteredExpenses.reduce((total, expense) => total + (expense.amount ?? 0), 0);
-  const filteredItemCount = filteredSales.reduce((total, sale) => total + (sale.items ?? 0), 0);
-  const refundedItemCount = filteredRefunds.reduce((total, refund) => (
-    total + (refund.lineItems ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0), 0)
-  ), 0);
-  const purchaseQuantityTotal = filteredPurchases.reduce((total, record) => total + Number(record.quantity ?? 0), 0);
-  const stockMovementQuantityTotal = filteredStockMovements.reduce((total, record) => total + Number(record.quantity ?? 0), 0);
-  const inventoryStockTotal = inventoryRows.reduce((total, product) => total + product.stockCount, 0);
-  const inventoryValueTotal = inventoryRows.reduce((total, product) => total + product.stockValue, 0);
-  const reportTitle = `${capitalize(reportPeriod)} report`;
+
+  const stockInRows = useMemo(() => groupStockInRows(filteredPurchases, visibleBranches), [filteredPurchases, visibleBranches]);
+
+  const salesTotal = filteredSales.reduce((total, sale) => total + (sale.amount ?? 0), 0);
+  const refundTotal = filteredRefunds.reduce((total, refund) => total + (refund.amount ?? 0), 0);
+  const purchaseTotal = filteredPurchases.reduce((total, record) => total + (record.purchaseTotal ?? 0), 0);
+  const expenseTotal = filteredExpenses.reduce((total, expense) => total + (expense.amount ?? 0), 0);
+  const itemCount = filteredSales.reduce((total, sale) => total + (sale.items ?? 0), 0);
+  const stockCountTotal = stockInRows.reduce((total, row) => total + row.totalQuantity, 0);
+  const stockEntryCount = filteredPurchases.length;
+  const stockItemCount = stockInRows.length;
+
+  const reportTypeLabel = getReportTypeLabel(reportType);
+  const reportTitle = `${capitalize(reportPeriod)} ${reportTypeLabel}`;
   const reportDateRange = reportRange.start === reportRange.end
     ? formatDate(reportRange.start)
     : `${formatDate(reportRange.start)} to ${formatDate(reportRange.end)}`;
@@ -100,33 +97,47 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
     }
 
     printWindow.document.write(createReportDocument({
+      branchScopeLabel,
+      branchScopeId,
       detailedSalesItems,
-      filteredItemCount,
-      filteredExpenseTotal,
+      expenseTotal,
       filteredExpenses,
-      filteredPurchaseTotal,
-      filteredPurchases,
       filteredRefunds,
-      filteredRefundTotal,
       filteredSales,
-      filteredSalesTotal,
-      filteredStockMovements,
-      filteredTransfers,
-      inventoryRows,
-      inventoryStockTotal,
-      inventoryValueTotal,
-      purchaseQuantityTotal,
+      itemCount,
+      purchaseTotal,
       reportDateRange,
       reportTitle,
-      refundedItemCount,
+      reportType,
+      salesTotal,
       session,
-      stockMovementQuantityTotal,
-      summary
+      stockCountTotal,
+      stockEntryCount,
+      stockInRows,
+      stockItemCount,
+      summary,
+      refundTotal,
+      visibleBranches
     }));
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
   }
+
+  const reportCards = getReportCards({
+    branchScopeLabel,
+    expenseTotal,
+    filteredExpenses,
+    filteredRefunds,
+    itemCount,
+    purchaseTotal,
+    reportType,
+    salesTotal,
+    stockCountTotal,
+    stockEntryCount,
+    stockItemCount,
+    refundTotal
+  });
 
   return (
     <div className="page-grid report-screen">
@@ -168,15 +179,23 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
       <section className="panel printable-report">
         <div className="panel-heading report-controls-heading">
           <div>
-            <h3>Printable Transaction Reports</h3>
-            <p>Generate a clean POS-style report with item quantities, prices, and totals</p>
+            <h3>Printable Reports</h3>
+            <p>Pick sales, stock-in, or expenses, then scope it to a branch before printing</p>
           </div>
           <button className="primary-button no-print" onClick={handlePrint} type="button">
-            Print detailed report
+            Print report
           </button>
         </div>
 
         <div className="report-toolbar no-print">
+          <label className="field">
+            <span>Report type</span>
+            <select value={reportType} onChange={(event) => setReportType(event.target.value)}>
+              <option value="sales">Sales</option>
+              <option value="stock">Stock in</option>
+              <option value="expenses">Expenses</option>
+            </select>
+          </label>
           <label className="field">
             <span>Report period</span>
             <select value={reportPeriod} onChange={(event) => setReportPeriod(event.target.value)}>
@@ -190,53 +209,41 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
             <span>Report date</span>
             <input type="date" value={reportDate} onChange={(event) => setReportDate(event.target.value)} />
           </label>
+          <label className="field">
+            <span>Branch scope</span>
+            <select
+              value={branchScopeId}
+              onChange={(event) => onBranchChange(event.target.value)}
+              disabled={session.role !== "admin"}
+            >
+              {session.role === "admin" && <option value="all">All branches</option>}
+              {(branches ?? []).map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="print-header">
           <p className="eyebrow">Bea n Belle</p>
           <h3>{reportTitle}</h3>
-          <p>{summary.branchName} - {reportDateRange}</p>
+          <p>{branchScopeLabel} - {reportDateRange}</p>
         </div>
 
         <div className="report-grid compact-report-grid">
-          <article className="report-card">
-            <span>Sales total</span>
-            <strong>{formatCurrency(filteredSalesTotal)}</strong>
-            <p>{filteredSales.length} sales transactions</p>
-          </article>
-          <article className="report-card">
-            <span>Refund total</span>
-            <strong>{formatCurrency(filteredRefundTotal)}</strong>
-            <p>{filteredRefunds.length} refund records</p>
-          </article>
-          <article className="report-card">
-            <span>Stock purchases</span>
-            <strong>{formatCurrency(filteredPurchaseTotal)}</strong>
-            <p>{filteredPurchases.length} stock-in records</p>
-          </article>
-          <article className="report-card">
-            <span>Expenses</span>
-            <strong>{formatCurrency(filteredExpenseTotal)}</strong>
-            <p>{filteredExpenses.length} expense records</p>
-          </article>
-          <article className="report-card">
-            <span>Items sold</span>
-            <strong>{filteredItemCount}</strong>
-            <p>Selected {reportPeriod} period</p>
-          </article>
-          <article className="report-card">
-            <span>Inventory stock</span>
-            <strong>{inventoryStockTotal}</strong>
-            <p>{formatCurrency(inventoryValueTotal)} retail value</p>
-          </article>
+          {reportCards.map((card) => (
+            <article className="report-card" key={card.label}>
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
+              <p>{card.note}</p>
+            </article>
+          ))}
         </div>
 
-        <div className="report-section">
-          <div className="panel-heading compact-heading">
-            <h3>Detailed Sales Items</h3>
-            <p>{detailedSalesItems.length} item rows</p>
-          </div>
-          <div className="table-wrap">
+        {reportType === "sales" && (
+          <ReportTable title="Sales Report" count={`${detailedSalesItems.length} item rows`}>
             <table>
               <thead>
                 <tr>
@@ -276,69 +283,69 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
                 <tfoot>
                   <tr>
                     <td colSpan="6">Sales item totals</td>
-                    <td>{filteredItemCount}</td>
-                    <td>{formatCurrency(filteredSalesTotal)}</td>
+                    <td>{itemCount}</td>
+                    <td>{formatCurrency(salesTotal)}</td>
                     <td colSpan="2"></td>
                   </tr>
                 </tfoot>
               )}
             </table>
             {detailedSalesItems.length === 0 && <p className="empty-state">No sales items for this period.</p>}
-          </div>
-        </div>
+          </ReportTable>
+        )}
 
-        <div className="report-section">
-          <div className="panel-heading compact-heading">
-            <h3>Detailed Refunds</h3>
-            <p>{filteredRefunds.length} records</p>
-          </div>
-          <div className="table-wrap">
+        {reportType === "stock" && (
+          <ReportTable title="Stock-in Report" count={`${stockInRows.length} grouped rows`}>
             <table>
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Sale ID</th>
-                  <th>Items</th>
-                  <th>Qty</th>
-                  <th>Amount</th>
-                  <th>Employee</th>
-                  <th>Reason</th>
+                  <th>Item</th>
+                  <th>Total stock added</th>
+                  {visibleBranches.map((branch) => (
+                    <th key={branch.id}>{branch.name}</th>
+                  ))}
+                  <th>Source</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRefunds.map((refund) => (
-                  <tr key={refund.id}>
-                    <td>{formatDate(refund.date)}</td>
-                    <td>{refund.saleId}</td>
-                    <td>{(refund.lineItems ?? []).map((item) => item.productName).join(", ") || "-"}</td>
-                    <td>{(refund.lineItems ?? []).reduce((total, item) => total + Number(item.quantity ?? 0), 0)}</td>
-                    <td>{formatCurrency(refund.amount ?? 0)}</td>
-                    <td>{refund.employee}</td>
-                    <td>{refund.reason}</td>
+                {stockInRows.map((row) => (
+                  <tr key={row.id}>
+                    <td>
+                      <button className="text-button date-link" onClick={() => { setReportPeriod("daily"); setReportDate(row.date); }} type="button">
+                        {formatDate(row.date)}
+                      </button>
+                    </td>
+                    <td>{row.productName}</td>
+                    <td>{row.totalQuantity}</td>
+                    {visibleBranches.map((branch) => (
+                      <td key={branch.id}>{row.branchQuantities[branch.id] ?? 0}</td>
+                    ))}
+                    <td>{row.source}</td>
                   </tr>
                 ))}
               </tbody>
-              {filteredRefunds.length > 0 && (
+              {stockInRows.length > 0 && (
                 <tfoot>
                   <tr>
-                    <td colSpan="3">Refund totals</td>
-                    <td>{refundedItemCount}</td>
-                    <td>{formatCurrency(filteredRefundTotal)}</td>
-                    <td colSpan="2"></td>
+                    <td colSpan="2">Stock-in totals</td>
+                    <td>{stockCountTotal}</td>
+                    {visibleBranches.map((branch) => (
+                      <td key={branch.id}>
+                        {stockInRows.reduce((total, row) => total + Number(row.branchQuantities[branch.id] ?? 0), 0)}
+                      </td>
+                    ))}
+                    <td></td>
                   </tr>
                 </tfoot>
               )}
             </table>
-            {filteredRefunds.length === 0 && <p className="empty-state">No refunds for this period.</p>}
-          </div>
-        </div>
+            {stockInRows.length === 0 && <p className="empty-state">No stock-in rows for this period.</p>}
+          </ReportTable>
+        )}
 
-        <div className="report-section">
-          <div className="panel-heading compact-heading">
-            <h3>Detailed Expenses</h3>
-            <p>{filteredExpenses.length} records</p>
-          </div>
-          <div className="table-wrap">
+        {reportType === "expenses" && (
+          <ReportTable title="Expenses Report" count={`${filteredExpenses.length} records`}>
             <table>
               <thead>
                 <tr>
@@ -361,205 +368,417 @@ export function ReportsPage({ refundRecords, session, stockHistory, summary }) {
                     </td>
                     <td>{expense.category}</td>
                     <td>{expense.name}</td>
-                    <td>{expense.branchName ?? summary.branchName}</td>
+                    <td>{expense.branchName ?? branchScopeLabel}</td>
                     <td>{formatCurrency(expense.amount)}</td>
                     <td>{expense.employee}</td>
                     <td>{expense.note || "-"}</td>
                   </tr>
                 ))}
               </tbody>
+              {filteredExpenses.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan="4">Expense totals</td>
+                    <td>{formatCurrency(expenseTotal)}</td>
+                    <td colSpan="2"></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
             {filteredExpenses.length === 0 && <p className="empty-state">No expenses for this period.</p>}
-          </div>
-        </div>
-
-        <div className="report-section">
-          <div className="panel-heading compact-heading">
-            <h3>Detailed Stock Movements</h3>
-            <p>{filteredStockMovements.length} records</p>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Product</th>
-                  <th>Movement</th>
-                  <th>Source</th>
-                  <th>Qty</th>
-                  <th>Price / unit cost</th>
-                  <th>Purchase total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredStockMovements.map((record) => (
-                  <tr key={record.id}>
-                    <td>{formatDate(record.date)}</td>
-                    <td>{record.productName}</td>
-                    <td>{record.type === "transfer" ? `${record.fromBranchId} to ${record.toBranchId}` : (record.branchName ?? summary.branchName)}</td>
-                    <td>{record.source ?? "Stock-in"}</td>
-                    <td>{record.quantity}</td>
-                    <td>{formatCurrency(record.unitCost ?? 0)}</td>
-                    <td>{formatCurrency(record.purchaseTotal ?? 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              {filteredStockMovements.length > 0 && (
-                <tfoot>
-                  <tr>
-                    <td colSpan="4">Stock movement totals</td>
-                    <td>{stockMovementQuantityTotal}</td>
-                    <td></td>
-                    <td>{formatCurrency(filteredPurchaseTotal)}</td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-            {filteredStockMovements.length === 0 && <p className="empty-state">No stock movements for this period.</p>}
-          </div>
-        </div>
-
-        <div className="report-section">
-          <div className="panel-heading compact-heading">
-            <h3>Inventory Snapshot</h3>
-            <p>{inventoryRows.length} products</p>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>SKU</th>
-                  <th>Category</th>
-                  <th>Stock</th>
-                  <th>Retail price</th>
-                  <th>Stock value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {inventoryRows.map((product) => (
-                  <tr key={product.id}>
-                    <td>{product.name}</td>
-                    <td>{product.sku}</td>
-                    <td>{product.category}</td>
-                    <td>{product.stockCount}</td>
-                    <td>{formatCurrency(product.retailPrice)}</td>
-                    <td>{formatCurrency(product.stockValue)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              {inventoryRows.length > 0 && (
-                <tfoot>
-                  <tr>
-                    <td colSpan="3">Inventory totals</td>
-                    <td>{inventoryStockTotal}</td>
-                    <td></td>
-                    <td>{formatCurrency(inventoryValueTotal)}</td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-            {inventoryRows.length === 0 && <p className="empty-state">No inventory products yet.</p>}
-          </div>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <h3>Sales Per Branch</h3>
-          <p>{summary.branchName}</p>
-        </div>
-        <div className="chart-list">
-          {summary.salesByBranch.map((branch) => (
-            <div className="chart-row" key={branch.id}>
-              <span>{branch.name}</span>
-              <div className="bar-track">
-                <div className="bar-fill" style={{ width: `${(branch.total / maxBranchTotal) * 100}%` }} />
-              </div>
-              <strong>{formatCurrency(branch.total)}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <h3>Best-Selling Items</h3>
-          <p>Quantity sold</p>
-        </div>
-        <div className="chart-list">
-          {chartProducts.map(([name, qty]) => (
-            <div className="chart-row" key={name}>
-              <span>{name}</span>
-              <div className="bar-track">
-                <div className="bar-fill" style={{ width: `${(qty / maxProductQty) * 100}%` }} />
-              </div>
-              <strong>{qty}</strong>
-            </div>
-          ))}
-          {chartProducts.length === 0 && <p className="empty-state">No product sales yet.</p>}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <h3>Low Stock Alerts</h3>
-          <p>5 items or below</p>
-        </div>
-        <div className="product-list">
-          {lowStocks.map((product) => {
-            const count = summary.branchId === "all"
-              ? Object.values(product.stock).reduce((total, value) => total + value, 0)
-              : product.stock[summary.branchId];
-
-            return (
-              <article className="product-row" key={product.id}>
-                <div>
-                  <strong>{product.name}</strong>
-                  <span>{product.category} - {product.sku}</span>
-                </div>
-                <span className="stock-pill warning">{count} left</span>
-              </article>
-            );
-          })}
-          {lowStocks.length === 0 && <p className="empty-state">No low-stock items right now.</p>}
-        </div>
-      </section>
-
-      <section className="report-grid">
-        <article className="report-card">
-          <span>Refund records</span>
-          <strong>{refundRecords.length}</strong>
-          <p>Returned sales recorded</p>
-        </article>
-        <article className="report-card">
-          <span>Stock-in records</span>
-          <strong>{stockHistory.length}</strong>
-          <p>New stock movements saved</p>
-        </article>
-        <article className="report-card">
-          <span>Stock purchases</span>
-          <strong>{formatCurrency(totalPurchases)}</strong>
-          <p>Purchase cost from stock-in</p>
-        </article>
-        <article className="report-card">
-          <span>Expenses</span>
-          <strong>{formatCurrency(totalExpenses)}</strong>
-          <p>Salary and bills recorded</p>
-        </article>
-        <article className="report-card">
-          <span>Revenue total</span>
-          <strong>{formatCurrency(totalRevenue)}</strong>
-          <p>Current branch scope</p>
-        </article>
-        <article className="report-card">
-          <span>Revenue after expenses</span>
-          <strong>{formatCurrency(netProfit)}</strong>
-          <p>Revenue minus stock purchases and expenses</p>
-        </article>
+          </ReportTable>
+        )}
       </section>
     </div>
   );
+}
+
+function ReportTable({ title, count, children }) {
+  return (
+    <div className="report-section">
+      <div className="panel-heading compact-heading">
+        <h3>{title}</h3>
+        <p>{count}</p>
+      </div>
+      <div className="table-wrap">{children}</div>
+    </div>
+  );
+}
+
+function getReportCards({
+  branchScopeLabel,
+  expenseTotal,
+  filteredExpenses,
+  filteredRefunds,
+  itemCount,
+  purchaseTotal,
+  reportType,
+  salesTotal,
+  stockCountTotal,
+  stockEntryCount,
+  stockItemCount,
+  refundTotal
+}) {
+  if (reportType === "stock") {
+    return [
+      { label: "Stock-in entries", value: stockEntryCount, note: "Individual branch stock records" },
+      { label: "Grouped items", value: stockItemCount, note: "Unique stock-in rows in this period" },
+      { label: "Total stock added", value: stockCountTotal, note: "All branches combined" },
+      { label: "Branch scope", value: branchScopeLabel, note: "Current report filter" }
+    ];
+  }
+
+  if (reportType === "expenses") {
+    return [
+      { label: "Expense total", value: formatCurrency(expenseTotal), note: `${filteredExpenses.length} records` },
+      { label: "Records", value: filteredExpenses.length, note: "Expenses in the selected period" },
+      { label: "Refund total", value: formatCurrency(refundTotal), note: `${filteredRefunds.length} refund records` },
+      { label: "Net after expenses", value: formatCurrency(salesTotal - expenseTotal), note: "Sales minus expenses" }
+    ];
+  }
+
+  return [
+    { label: "Sales total", value: formatCurrency(salesTotal), note: `${itemCount} items sold` },
+    { label: "Refund total", value: formatCurrency(refundTotal), note: `${filteredRefunds.length} refund records` },
+    { label: "Items sold", value: itemCount, note: "Selected period total" },
+    { label: "Net after expenses", value: formatCurrency(salesTotal - expenseTotal), note: "Sales minus expenses" }
+  ];
+}
+
+function groupStockInRows(records, branches) {
+  const grouped = new Map();
+
+  records.forEach((record) => {
+    const key = `${record.date}|${record.productId ?? record.productName}|${record.source ?? "Stock-in"}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: key,
+        branchQuantities: Object.fromEntries(branches.map((branch) => [branch.id, 0])),
+        date: record.date,
+        productName: record.productName ?? "Stock item",
+        source: record.source ?? "Stock-in",
+        totalQuantity: 0
+      });
+    }
+
+    const row = grouped.get(key);
+    const branchId = record.branchId ?? record.toBranchId ?? branches[0]?.id ?? "all";
+    const quantity = Number(record.quantity ?? 0);
+
+    row.totalQuantity += quantity;
+    row.branchQuantities[branchId] = (row.branchQuantities[branchId] ?? 0) + quantity;
+  });
+
+  return Array.from(grouped.values()).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function getReportTypeLabel(type) {
+  if (type === "stock") return "stock-in report";
+  if (type === "expenses") return "expenses report";
+  return "sales report";
+}
+
+function createReportDocument({
+  branchScopeId,
+  branchScopeLabel,
+  detailedSalesItems,
+  expenseTotal,
+  filteredExpenses,
+  filteredRefunds,
+  filteredSales,
+  itemCount,
+  purchaseTotal,
+  reportDateRange,
+  reportTitle,
+  reportType,
+  salesTotal,
+  session,
+  stockCountTotal,
+  stockEntryCount,
+  stockInRows,
+  stockItemCount,
+  summary,
+  refundTotal,
+  visibleBranches
+}) {
+  const generatedAt = new Date().toLocaleString("en", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+
+  const body = reportType === "stock"
+    ? renderStockRows(stockInRows, visibleBranches)
+    : reportType === "expenses"
+      ? renderExpenseRows(filteredExpenses, branchScopeLabel, session)
+      : renderSalesRows(detailedSalesItems, session);
+
+  const tableMarkup = reportType === "stock"
+    ? `
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Item</th>
+            <th class="number">Total stock added</th>
+            ${visibleBranches.map((branch) => `<th class="number">${escapeHtml(branch.name)}</th>`).join("")}
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2">Stock-in totals</td>
+            <td class="number">${stockCountTotal}</td>
+            ${visibleBranches.map((branch) => `<td class="number">${stockInRows.reduce((total, row) => total + Number(row.branchQuantities[branch.id] ?? 0), 0)}</td>`).join("")}
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>`
+    : reportType === "expenses"
+      ? `
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Detail</th>
+              <th>Branch</th>
+              <th class="number">Amount</th>
+              <th>Employee</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>${body}</tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4">Expense totals</td>
+              <td class="number">${escapeHtml(formatCurrency(expenseTotal))}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>`
+      : `
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Sale ID</th>
+              <th>Item</th>
+              <th>Type</th>
+              <th>Tag</th>
+              <th class="number">Price</th>
+              <th class="number">Qty</th>
+              <th class="number">Total Price</th>
+              <th>Employee</th>
+              <th>Payment</th>
+            </tr>
+          </thead>
+          <tbody>${body}</tbody>
+          <tfoot>
+            <tr>
+              <td colspan="6">Sales item totals</td>
+              <td class="number">${itemCount}</td>
+              <td class="number">${escapeHtml(formatCurrency(salesTotal))}</td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>`;
+
+  const summaryCards = reportType === "stock"
+    ? `
+      <div class="summary-box"><span>Stock-in entries</span><strong>${stockEntryCount}</strong></div>
+      <div class="summary-box"><span>Grouped items</span><strong>${stockItemCount}</strong></div>
+      <div class="summary-box"><span>Total stock added</span><strong>${stockCountTotal}</strong></div>
+      <div class="summary-box"><span>Branch scope</span><strong>${escapeHtml(branchScopeLabel)}</strong></div>`
+    : reportType === "expenses"
+      ? `
+      <div class="summary-box"><span>Expense total</span><strong>${escapeHtml(formatCurrency(expenseTotal))}</strong></div>
+      <div class="summary-box"><span>Expense records</span><strong>${filteredExpenses.length}</strong></div>
+      <div class="summary-box"><span>Refund total</span><strong>${escapeHtml(formatCurrency(refundTotal))}</strong></div>
+      <div class="summary-box"><span>Branch scope</span><strong>${escapeHtml(branchScopeLabel)}</strong></div>`
+      : `
+      <div class="summary-box"><span>Sales total</span><strong>${escapeHtml(formatCurrency(salesTotal))}</strong></div>
+      <div class="summary-box"><span>Items sold</span><strong>${itemCount}</strong></div>
+      <div class="summary-box"><span>Refund total</span><strong>${escapeHtml(formatCurrency(refundTotal))}</strong></div>
+      <div class="summary-box"><span>Branch scope</span><strong>${escapeHtml(branchScopeLabel)}</strong></div>`;
+
+  return `<!doctype html>
+    <html>
+      <head>
+        <title>Bea n Belle ${escapeHtml(reportTitle)}</title>
+        <style>
+          @page { size: A4; margin: 12mm; }
+          * { box-sizing: border-box; }
+          body {
+            color: #111;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11px;
+            line-height: 1.35;
+            margin: 0;
+          }
+          .report { width: 100%; }
+          .store-header {
+            align-items: start;
+            border-bottom: 2px solid #111;
+            display: grid;
+            gap: 12px;
+            grid-template-columns: 1fr auto;
+            padding-bottom: 10px;
+          }
+          .store-name {
+            font-size: 20px;
+            font-weight: 800;
+            letter-spacing: 0;
+            margin: 0;
+            text-transform: uppercase;
+          }
+          .subtitle {
+            font-size: 13px;
+            font-weight: 700;
+            margin: 3px 0 0;
+            text-transform: uppercase;
+          }
+          .meta {
+            display: grid;
+            gap: 3px;
+            text-align: right;
+          }
+          .meta span { white-space: nowrap; }
+          .summary-grid {
+            display: grid;
+            gap: 8px;
+            grid-template-columns: repeat(4, 1fr);
+            margin: 14px 0;
+          }
+          .summary-box {
+            border: 1px solid #222;
+            min-height: 56px;
+            padding: 8px;
+          }
+          .summary-box span {
+            display: block;
+            font-size: 10px;
+            text-transform: uppercase;
+          }
+          .summary-box strong {
+            display: block;
+            font-size: 15px;
+            margin-top: 5px;
+          }
+          .section-title {
+            background: #111;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 800;
+            margin: 16px 0 0;
+            padding: 6px 8px;
+            text-transform: uppercase;
+          }
+          table {
+            border-collapse: collapse;
+            width: 100%;
+          }
+          th, td {
+            border-bottom: 1px solid #cfcfcf;
+            padding: 6px 5px;
+            text-align: left;
+            vertical-align: top;
+          }
+          th {
+            background: #efefef;
+            border-bottom: 1px solid #111;
+            font-size: 9px;
+            text-transform: uppercase;
+          }
+          tfoot td {
+            border-top: 2px solid #111;
+            border-bottom: 0;
+            font-weight: 800;
+          }
+          .number { text-align: right; white-space: nowrap; }
+          .empty { color: #555; font-style: italic; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <main class="report">
+          <header class="store-header">
+            <div>
+              <h1 class="store-name">Bea n Belle Store System</h1>
+              <p class="subtitle">${escapeHtml(reportTitle)} - ${escapeHtml(branchScopeLabel)}</p>
+              <p>${escapeHtml(branchScopeLabel)} | ${escapeHtml(reportDateRange)}</p>
+            </div>
+            <div class="meta">
+              <span><strong>Generated:</strong> ${escapeHtml(generatedAt)}</span>
+              <span><strong>Prepared by:</strong> ${escapeHtml(session.userName)}</span>
+              <span><strong>Role:</strong> ${escapeHtml(session.role)}</span>
+            </div>
+          </header>
+
+          <section class="summary-grid">
+            ${summaryCards}
+          </section>
+
+          <h2 class="section-title">${escapeHtml(reportTypeLabelForPrint(reportType))}</h2>
+          ${tableMarkup}
+        </main>
+      </body>
+    </html>`;
+}
+
+function renderSalesRows(detailedSalesItems, session) {
+  return detailedSalesItems.length
+    ? detailedSalesItems.map((item) => `
+        <tr>
+          <td>${escapeHtml(formatDate(item.date))}</td>
+          <td>${escapeHtml(item.saleId)}</td>
+          <td>${escapeHtml(item.productName)}</td>
+          <td>${escapeHtml(item.priceType)}</td>
+          <td>${escapeHtml(item.saleType ?? "-")}</td>
+          <td class="number">${escapeHtml(formatCurrency(item.unitPrice))}</td>
+          <td class="number">${item.quantity}</td>
+          <td class="number">${escapeHtml(formatCurrency(item.total))}</td>
+          <td>${escapeHtml(item.employee ?? session.userName)}</td>
+          <td>${escapeHtml(item.paymentMethod)}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="10" class="empty">No sales items for this period.</td></tr>`;
+}
+
+function renderExpenseRows(filteredExpenses, branchScopeLabel, session) {
+  return filteredExpenses.length
+    ? filteredExpenses.map((expense) => `
+        <tr>
+          <td>${escapeHtml(formatDate(expense.date))}</td>
+          <td>${escapeHtml(expense.category)}</td>
+          <td>${escapeHtml(expense.name)}</td>
+          <td>${escapeHtml(expense.branchName ?? branchScopeLabel)}</td>
+          <td class="number">${escapeHtml(formatCurrency(expense.amount ?? 0))}</td>
+          <td>${escapeHtml(expense.employee ?? session.userName)}</td>
+          <td>${escapeHtml(expense.note ?? "-")}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="7" class="empty">No expenses for this period.</td></tr>`;
+}
+
+function renderStockRows(stockInRows, visibleBranches) {
+  return stockInRows.length
+    ? stockInRows.map((row) => `
+        <tr>
+          <td>${escapeHtml(formatDate(row.date))}</td>
+          <td>${escapeHtml(row.productName)}</td>
+          <td class="number">${row.totalQuantity}</td>
+          ${visibleBranches.map((branch) => `<td class="number">${row.branchQuantities[branch.id] ?? 0}</td>`).join("")}
+          <td>${escapeHtml(row.source)}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="${3 + visibleBranches.length + 1}" class="empty">No stock-in rows for this period.</td></tr>`;
+}
+
+function reportTypeLabelForPrint(type) {
+  if (type === "stock") return "Stock-in Report";
+  if (type === "expenses") return "Expenses Report";
+  return "Sales Report";
 }
 
 function getReportRange(period, dateValue) {
@@ -628,402 +847,6 @@ function toDateInputValue(dateValue) {
 
 function capitalize(value) {
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
-}
-
-function createReportDocument({
-  detailedSalesItems,
-  filteredItemCount,
-  filteredExpenseTotal,
-  filteredExpenses,
-  filteredPurchaseTotal,
-  filteredPurchases,
-  filteredRefunds,
-  filteredRefundTotal,
-  filteredSales,
-  filteredSalesTotal,
-  filteredStockMovements,
-  inventoryRows,
-  inventoryStockTotal,
-  inventoryValueTotal,
-  purchaseQuantityTotal,
-  reportDateRange,
-  reportTitle,
-  refundedItemCount,
-  session,
-  stockMovementQuantityTotal,
-  summary
-}) {
-  const generatedAt = new Date().toLocaleString("en", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  });
-  const salesRows = detailedSalesItems.length
-    ? detailedSalesItems.map((item) => `
-        <tr>
-          <td>${escapeHtml(formatDate(item.date))}</td>
-          <td>${escapeHtml(item.saleId)}</td>
-          <td>${escapeHtml(item.productName)}</td>
-          <td>${escapeHtml(item.priceType)}</td>
-          <td>${escapeHtml(item.saleType ?? "-")}</td>
-          <td class="number">${escapeHtml(formatCurrency(item.unitPrice))}</td>
-          <td class="number">${item.quantity}</td>
-          <td class="number">${escapeHtml(formatCurrency(item.total))}</td>
-          <td>${escapeHtml(item.employee)}</td>
-          <td>${escapeHtml(item.paymentMethod)}</td>
-        </tr>
-      `).join("")
-    : `<tr><td colspan="10" class="empty">No sales items for this period.</td></tr>`;
-  const expenseRows = filteredExpenses.length
-    ? filteredExpenses.map((expense) => `
-        <tr>
-          <td>${escapeHtml(formatDate(expense.date))}</td>
-          <td>${escapeHtml(expense.category)}</td>
-          <td>${escapeHtml(expense.name)}</td>
-          <td>${escapeHtml(expense.branchName ?? summary.branchName)}</td>
-          <td class="number">${escapeHtml(formatCurrency(expense.amount ?? 0))}</td>
-          <td>${escapeHtml(expense.employee ?? session.userName)}</td>
-          <td>${escapeHtml(expense.note ?? "-")}</td>
-        </tr>
-      `).join("")
-    : `<tr><td colspan="7" class="empty">No expenses for this period.</td></tr>`;
-  const refundRows = filteredRefunds.length
-    ? filteredRefunds.map((refund) => `
-        <tr>
-          <td>${escapeHtml(formatDate(refund.date))}</td>
-          <td>${escapeHtml(refund.saleId)}</td>
-          <td>${escapeHtml((refund.lineItems ?? []).map((item) => item.productName).join(", ") || "-")}</td>
-          <td class="number">${(refund.lineItems ?? []).reduce((total, item) => total + Number(item.quantity ?? 0), 0)}</td>
-          <td class="number">${escapeHtml(formatCurrency(refund.amount ?? 0))}</td>
-          <td>${escapeHtml(refund.employee ?? session.userName)}</td>
-          <td>${escapeHtml(refund.reason ?? "-")}</td>
-        </tr>
-      `).join("")
-    : `<tr><td colspan="7" class="empty">No refunds for this period.</td></tr>`;
-  const stockMovementRows = filteredStockMovements.length
-    ? filteredStockMovements.map((record) => `
-        <tr>
-          <td>${escapeHtml(formatDate(record.date))}</td>
-          <td>${escapeHtml(record.productName)}</td>
-          <td>${escapeHtml(record.type === "transfer" ? `${record.fromBranchId} to ${record.toBranchId}` : (record.branchName ?? summary.branchName))}</td>
-          <td>${escapeHtml(record.source ?? "Stock-in")}</td>
-          <td class="number">${escapeHtml(String(record.quantity ?? 0))}</td>
-          <td class="number">${escapeHtml(formatCurrency(record.unitCost ?? 0))}</td>
-          <td class="number">${escapeHtml(formatCurrency(record.purchaseTotal ?? 0))}</td>
-        </tr>
-      `).join("")
-    : `<tr><td colspan="7" class="empty">No stock movements for this period.</td></tr>`;
-  const inventoryRowsHtml = inventoryRows.length
-    ? inventoryRows.map((product) => `
-        <tr>
-          <td>${escapeHtml(product.name)}</td>
-          <td>${escapeHtml(product.sku ?? "-")}</td>
-          <td>${escapeHtml(product.category ?? "-")}</td>
-          <td class="number">${escapeHtml(String(product.stockCount ?? 0))}</td>
-          <td class="number">${escapeHtml(formatCurrency(product.retailPrice ?? 0))}</td>
-          <td class="number">${escapeHtml(formatCurrency(product.stockValue ?? 0))}</td>
-        </tr>
-      `).join("")
-    : `<tr><td colspan="6" class="empty">No inventory products yet.</td></tr>`;
-
-  return `<!doctype html>
-    <html>
-      <head>
-        <title>Bea n Belle ${escapeHtml(reportTitle)}</title>
-        <style>
-          @page { size: A4; margin: 12mm; }
-          * { box-sizing: border-box; }
-          body {
-            color: #111;
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 11px;
-            line-height: 1.35;
-            margin: 0;
-          }
-          .report {
-            width: 100%;
-          }
-          .store-header {
-            align-items: start;
-            border-bottom: 2px solid #111;
-            display: grid;
-            gap: 12px;
-            grid-template-columns: 1fr auto;
-            padding-bottom: 10px;
-          }
-          .store-name {
-            font-size: 20px;
-            font-weight: 800;
-            letter-spacing: 0;
-            margin: 0;
-            text-transform: uppercase;
-          }
-          .subtitle {
-            font-size: 13px;
-            font-weight: 700;
-            margin: 3px 0 0;
-            text-transform: uppercase;
-          }
-          .meta {
-            display: grid;
-            gap: 3px;
-            text-align: right;
-          }
-          .meta span {
-            white-space: nowrap;
-          }
-          .summary-grid {
-            display: grid;
-            gap: 8px;
-            grid-template-columns: repeat(4, 1fr);
-            margin: 14px 0;
-          }
-          .summary-box {
-            border: 1px solid #222;
-            min-height: 56px;
-            padding: 8px;
-          }
-          .summary-box span {
-            display: block;
-            font-size: 10px;
-            text-transform: uppercase;
-          }
-          .summary-box strong {
-            display: block;
-            font-size: 15px;
-            margin-top: 5px;
-          }
-          .section-title {
-            background: #111;
-            color: #fff;
-            font-size: 12px;
-            font-weight: 800;
-            margin: 16px 0 0;
-            padding: 6px 8px;
-            text-transform: uppercase;
-          }
-          table {
-            border-collapse: collapse;
-            width: 100%;
-          }
-          th,
-          td {
-            border-bottom: 1px solid #cfcfcf;
-            padding: 6px 5px;
-            text-align: left;
-            vertical-align: top;
-          }
-          th {
-            background: #efefef;
-            border-bottom: 1px solid #111;
-            font-size: 9px;
-            text-transform: uppercase;
-          }
-          tfoot td {
-            border-top: 2px solid #111;
-            border-bottom: 0;
-            font-weight: 800;
-          }
-          .number {
-            text-align: right;
-            white-space: nowrap;
-          }
-          .empty {
-            color: #555;
-            font-style: italic;
-            text-align: center;
-          }
-          .signature-grid {
-            display: grid;
-            gap: 34px;
-            grid-template-columns: repeat(3, 1fr);
-            margin-top: 44px;
-          }
-          .signature-line {
-            border-top: 1px solid #111;
-            padding-top: 6px;
-            text-align: center;
-          }
-        </style>
-      </head>
-      <body>
-        <main class="report">
-          <header class="store-header">
-            <div>
-              <h1 class="store-name">Bea n Belle Store System</h1>
-              <p class="subtitle">${escapeHtml(reportTitle)} - Detailed Transaction Report</p>
-              <p>${escapeHtml(summary.branchName)} | ${escapeHtml(reportDateRange)}</p>
-            </div>
-            <div class="meta">
-              <span><strong>Generated:</strong> ${escapeHtml(generatedAt)}</span>
-              <span><strong>Prepared by:</strong> ${escapeHtml(session.userName)}</span>
-              <span><strong>Role:</strong> ${escapeHtml(session.role)}</span>
-            </div>
-          </header>
-
-          <section class="summary-grid">
-            <div class="summary-box">
-              <span>Sales transactions</span>
-              <strong>${filteredSales.length}</strong>
-            </div>
-            <div class="summary-box">
-              <span>Items sold</span>
-              <strong>${filteredItemCount}</strong>
-            </div>
-            <div class="summary-box">
-              <span>Sales total</span>
-              <strong>${escapeHtml(formatCurrency(filteredSalesTotal))}</strong>
-            </div>
-            <div class="summary-box">
-              <span>Refunds</span>
-              <strong>${escapeHtml(formatCurrency(filteredRefundTotal))}</strong>
-            </div>
-            <div class="summary-box">
-              <span>Stock purchases</span>
-              <strong>${escapeHtml(formatCurrency(filteredPurchaseTotal))}</strong>
-            </div>
-            <div class="summary-box">
-              <span>Expenses</span>
-              <strong>${escapeHtml(formatCurrency(filteredExpenseTotal))}</strong>
-            </div>
-            <div class="summary-box">
-              <span>Inventory stock</span>
-              <strong>${inventoryStockTotal}</strong>
-            </div>
-            <div class="summary-box">
-              <span>Inventory value</span>
-              <strong>${escapeHtml(formatCurrency(inventoryValueTotal))}</strong>
-            </div>
-          </section>
-
-          <h2 class="section-title">Detailed Sales Items</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Sale ID</th>
-                <th>Item</th>
-                <th>Type</th>
-                <th>Tag</th>
-                <th class="number">Price</th>
-                <th class="number">Qty</th>
-                <th class="number">Total Price</th>
-                <th>Employee</th>
-                <th>Payment</th>
-              </tr>
-            </thead>
-            <tbody>${salesRows}</tbody>
-            <tfoot>
-              <tr>
-                <td colspan="6">Sales item totals</td>
-                <td class="number">${filteredItemCount}</td>
-                <td class="number">${escapeHtml(formatCurrency(filteredSalesTotal))}</td>
-                <td colspan="2"></td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <h2 class="section-title">Detailed Refunds</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Sale ID</th>
-                <th>Items</th>
-                <th class="number">Qty</th>
-                <th class="number">Amount</th>
-                <th>Employee</th>
-                <th>Reason</th>
-              </tr>
-            </thead>
-            <tbody>${refundRows}</tbody>
-            <tfoot>
-              <tr>
-                <td colspan="3">Refund totals</td>
-                <td class="number">${refundedItemCount}</td>
-                <td class="number">${escapeHtml(formatCurrency(filteredRefundTotal))}</td>
-                <td colspan="2"></td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <h2 class="section-title">Detailed Expenses</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Detail</th>
-                <th>Branch</th>
-                <th class="number">Amount</th>
-                <th>Employee</th>
-                <th>Note</th>
-              </tr>
-            </thead>
-            <tbody>${expenseRows}</tbody>
-            <tfoot>
-              <tr>
-                <td colspan="4">Expense totals</td>
-                <td class="number">${escapeHtml(formatCurrency(filteredExpenseTotal))}</td>
-                <td colspan="2"></td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <h2 class="section-title">Detailed Stock Movements</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Product</th>
-                <th>Movement</th>
-                <th>Source</th>
-                <th class="number">Qty</th>
-                <th class="number">Unit Cost</th>
-                <th class="number">Purchase Total</th>
-              </tr>
-            </thead>
-            <tbody>${stockMovementRows}</tbody>
-            <tfoot>
-              <tr>
-                <td colspan="4">Stock movement totals</td>
-                <td class="number">${stockMovementQuantityTotal}</td>
-                <td></td>
-                <td class="number">${escapeHtml(formatCurrency(filteredPurchaseTotal))}</td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <h2 class="section-title">Inventory Snapshot</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>SKU</th>
-                <th>Category</th>
-                <th class="number">Stock</th>
-                <th class="number">Retail Price</th>
-                <th class="number">Stock Value</th>
-              </tr>
-            </thead>
-            <tbody>${inventoryRowsHtml}</tbody>
-            <tfoot>
-              <tr>
-                <td colspan="3">Inventory totals</td>
-                <td class="number">${inventoryStockTotal}</td>
-                <td></td>
-                <td class="number">${escapeHtml(formatCurrency(inventoryValueTotal))}</td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <section class="signature-grid">
-            <div class="signature-line">Prepared by</div>
-            <div class="signature-line">Checked by</div>
-            <div class="signature-line">Approved by</div>
-          </section>
-        </main>
-      </body>
-    </html>`;
 }
 
 function escapeHtml(value) {
