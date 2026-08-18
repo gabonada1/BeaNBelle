@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
 import { SearchableItemSelect } from "./SearchableItemSelect.jsx";
 
@@ -31,8 +31,11 @@ export function InventoryPage({
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyItemsPerPage, setHistoryItemsPerPage] = useState(5);
   const [editingProductId, setEditingProductId] = useState("");
   const [editingMovementId, setEditingMovementId] = useState("");
+  const stockHistoryRef = useRef(null);
   const [editForm, setEditForm] = useState({
     category: "",
     costPrice: "",
@@ -77,10 +80,17 @@ export function InventoryPage({
   const pageCount = Math.max(1, Math.ceil(filteredInventory.length / itemsPerPage));
   const pagedInventory = filteredInventory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const pageNumbers = Array.from({ length: pageCount }, (_, index) => index + 1);
+  const historyPageCount = Math.max(1, Math.ceil(stockHistory.length / historyItemsPerPage));
+  const pagedStockHistory = stockHistory.slice((historyPage - 1) * historyItemsPerPage, historyPage * historyItemsPerPage);
+  const historyPageNumbers = Array.from({ length: historyPageCount }, (_, index) => index + 1);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedCategory, itemsPerPage, summary.inventory.length]);
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [historyItemsPerPage, stockHistory.length]);
 
   useEffect(() => {
     const firstCategory = summary.inventory[0]?.category ?? "";
@@ -132,6 +142,10 @@ export function InventoryPage({
   function handleSearch(event) {
     event.preventDefault();
     setSearchTerm(searchInput.trim());
+  }
+
+  function scrollToStockHistory() {
+    stockHistoryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function handleMovementCategoryChange(category) {
@@ -463,8 +477,13 @@ export function InventoryPage({
     <div className="page-grid two-column inventory-page">
       <section className="panel">
         <div className="panel-heading">
-          <h3>Stock-In</h3>
-          <p>Add new stocks and save movement history</p>
+          <div>
+            <h3>Stock-In</h3>
+            <p>Add new stocks and save movement history</p>
+          </div>
+          <button className="secondary-button" type="button" onClick={scrollToStockHistory}>
+            Manage history
+          </button>
         </div>
         <form className="stock-form" onSubmit={handleStockIn}>
           <label className="field">
@@ -843,13 +862,50 @@ export function InventoryPage({
         </div>
       </section>
 
-      <section className="panel wide-panel">
+      <section className="panel wide-panel" ref={stockHistoryRef}>
         <div className="panel-heading">
-          <h3>Stock-In History</h3>
-          <p>Latest additions and sources</p>
+          <div>
+            <h3>Stock-In History</h3>
+            <p>Latest additions and sources</p>
+          </div>
+          <span className="total-preview">{stockHistory.length} record{stockHistory.length === 1 ? "" : "s"}</span>
         </div>
+        {stockHistory.length > 0 && (
+          <div className="inventory-pagination">
+            <span className="inventory-pagination-meta">
+              Showing {pagedStockHistory.length} of {stockHistory.length} record{stockHistory.length === 1 ? "" : "s"}
+            </span>
+            <div className="pagination-controls">
+              <label className="field compact-field">
+                <span>Rows per page</span>
+                <select value={historyItemsPerPage} onChange={(event) => setHistoryItemsPerPage(Number(event.target.value))}>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                </select>
+              </label>
+              <div className="pagination-buttons">
+                <button className="secondary-button" type="button" onClick={() => setHistoryPage(Math.max(1, historyPage - 1))} disabled={historyPage === 1}>
+                  Previous
+                </button>
+                {historyPageNumbers.map((page) => (
+                  <button
+                    key={page}
+                    className={page === historyPage ? "pagination-button active" : "pagination-button"}
+                    type="button"
+                    onClick={() => setHistoryPage(page)}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button className="secondary-button" type="button" onClick={() => setHistoryPage(Math.min(historyPageCount, historyPage + 1))} disabled={historyPage === historyPageCount}>
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="history-list">
-          {stockHistory.map((record) => (
+          {pagedStockHistory.map((record) => (
             <article className="history-row" key={record.id}>
               {editingMovementId === record.id ? (
                 <form className="stock-movement-edit-form" onSubmit={handleUpdateStockMovement}>
