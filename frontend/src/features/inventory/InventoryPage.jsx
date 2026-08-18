@@ -9,6 +9,7 @@ export function InventoryPage({
   onAddProduct,
   onAddStock,
   onDeleteProduct,
+  onDeleteStockMovement,
   onTransferStock,
   onUpdateProduct
 }) {
@@ -45,6 +46,13 @@ export function InventoryPage({
     name: "",
     resellerPrice: "",
     retailPrice: ""
+  });
+  const [bulkStockForm, setBulkStockForm] = useState({
+    branchId: session.role === "admin" ? branches[0]?.id : session.branchId,
+    productId: summary.inventory[0]?.id ?? "",
+    quantity: "",
+    unitCost: "",
+    source: ""
   });
   const [message, setMessage] = useState("");
   const [transferMessage, setTransferMessage] = useState("");
@@ -156,6 +164,34 @@ export function InventoryPage({
     setStockUnitCost("");
     setStockSource("");
     setMessage("Stock-in record saved.");
+  }
+
+  function handleBulkStockIn(event) {
+    event.preventDefault();
+    const branchId = session.role === "admin" ? bulkStockForm.branchId : session.branchId;
+
+    if (!bulkStockForm.productId || !bulkStockForm.quantity) {
+      setMessage("Select an item and enter a quantity for bulk stock-in.");
+      return;
+    }
+
+    onAddStock({
+      branchId,
+      items: [{
+        productId: bulkStockForm.productId,
+        quantity: bulkStockForm.quantity,
+        unitCost: bulkStockForm.unitCost,
+        source: bulkStockForm.source
+      }]
+    });
+
+    setBulkStockForm((current) => ({
+      ...current,
+      quantity: "",
+      unitCost: "",
+      source: ""
+    }));
+    setMessage("Bulk stock-in saved.");
   }
 
   async function handleTransfer(event) {
@@ -304,6 +340,51 @@ export function InventoryPage({
           <button className="primary-button" type="submit">Save stock-in</button>
         </form>
         {message && <p className="success-message">{message}</p>}
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading">
+          <h3>Bulk Stock-In</h3>
+          <p>Load stock for any branch and product in one action</p>
+        </div>
+        <form className="stock-form" onSubmit={handleBulkStockIn}>
+          <label className="field">
+            <span>Branch</span>
+            <select
+              value={session.role === "admin" ? bulkStockForm.branchId : session.branchId}
+              onChange={(event) => setBulkStockForm({ ...bulkStockForm, branchId: event.target.value })}
+              disabled={session.role !== "admin"}
+            >
+              {branches.map((branch) => (
+                <option key={branch.id} value={branch.id}>{branch.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Item</span>
+            <select
+              value={bulkStockForm.productId}
+              onChange={(event) => setBulkStockForm({ ...bulkStockForm, productId: event.target.value })}
+            >
+              {summary.inventory.map((product) => (
+                <option key={product.id} value={product.id}>{product.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Quantity</span>
+            <input min="1" type="number" value={bulkStockForm.quantity} onChange={(event) => setBulkStockForm({ ...bulkStockForm, quantity: event.target.value })} />
+          </label>
+          <label className="field">
+            <span>Purchase cost each</span>
+            <input min="0" type="number" value={bulkStockForm.unitCost} onChange={(event) => setBulkStockForm({ ...bulkStockForm, unitCost: event.target.value })} />
+          </label>
+          <label className="field">
+            <span>Supplier / Source</span>
+            <input value={bulkStockForm.source} onChange={(event) => setBulkStockForm({ ...bulkStockForm, source: event.target.value })} />
+          </label>
+          <button className="primary-button" type="submit">Add bulk stock</button>
+        </form>
       </section>
 
       <section className="panel">
@@ -535,6 +616,9 @@ export function InventoryPage({
                   ? `${branches.find((branch) => branch.id === record.fromBranchId)?.name ?? record.fromBranchId} to ${branches.find((branch) => branch.id === record.toBranchId)?.name ?? record.toBranchId}`
                   : branches.find((branch) => branch.id === record.branchId)?.name} - {record.employee}
               </span>
+              <div className="product-actions">
+                <button className="danger-button" type="button" onClick={() => onDeleteStockMovement?.(record.id)}>Delete</button>
+              </div>
             </article>
           ))}
           {stockHistory.length === 0 && <p className="empty-state">No stock-in history yet.</p>}

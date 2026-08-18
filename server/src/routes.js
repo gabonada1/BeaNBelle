@@ -38,7 +38,7 @@ export async function handleApiRoute(request, url, context) {
   }
 
   if (parts[1] === "stock-movements") {
-    return handleStockMovements(request, context);
+    return handleStockMovements(request, url, context);
   }
 
   if (parts[1] === "stock-transfers") {
@@ -329,7 +329,7 @@ async function handleProducts(request, parts, context) {
   return methodNotAllowed();
 }
 
-async function handleStockMovements(request, context) {
+async function handleStockMovements(request, url, context) {
   const db = await getDb();
   const authError = requireUser(context);
   if (authError) return authError;
@@ -350,6 +350,51 @@ async function handleStockMovements(request, context) {
 
   if (request.method === "POST") {
     const body = await readJson(request);
+
+    if (Array.isArray(body.items) && body.items.length > 0) {
+      const branchId = context.user.role === "owner" ? body.branchId : context.user.branchId;
+      requireFields({ branchId }, ["branchId"]);
+
+      const created = [];
+      for (const item of body.items) {
+        if (!item?.productId) continue;
+        const quantity = toNumber(item.quantity);
+        if (quantity < 1) {
+          return { status: 400, body: { error: "Each bulk stock-in item must have a quantity of at least 1." } };
+        }
+
+        const product = await db.collection("products").findOneAndUpdate(
+          { id: item.productId },
+          { $inc: { [`stock.${branchId}`]: quantity }, $set: { updatedAt: new Date() } },
+          { returnDocument: "after" }
+        );
+
+        if (!product) {
+          return { status: 404, body: { error: `Product not found: ${item.productId}` } };
+        }
+
+        const unitCost = toNumber(item.unitCost, toNumber(product.costPrice));
+        const movement = {
+          id: makeId("ST"),
+          productId: item.productId,
+          productName: product.name,
+          branchId,
+          quantity,
+          unitCost,
+          purchaseTotal: unitCost * quantity,
+          source: item.source?.trim() || body.source?.trim() || "Bulk stock-in",
+          employee: context.user.name,
+          date: new Date().toISOString().slice(0, 10),
+          createdAt: new Date()
+        };
+
+        await db.collection("stockMovements").insertOne(movement);
+        created.push(serializeMovement(movement));
+      }
+
+      return { status: 201, body: { stockMovements: created } };
+    }
+
     requireFields(body, ["productId", "quantity"]);
     const branchId = context.user.role === "owner" ? body.branchId : context.user.branchId;
     requireFields({ branchId }, ["branchId"]);
@@ -383,6 +428,27 @@ async function handleStockMovements(request, context) {
 
     await db.collection("stockMovements").insertOne(movement);
     return { status: 201, body: { stockMovement: serializeMovement(movement), product: serializeProduct(product) } };
+  }
+
+  if (request.method === "DELETE" && url) {
+    const parts = getPathParts(url);
+    if (parts[1] === "stock-movements" && parts.length === 3) {
+      const movementId = parts[2];
+      const movement = await db.collection("stockMovements").findOne({ id: movementId });
+      if (!movement) return { status: 404, body: { error: "Stock movement not found." } };
+
+      if (context.user.role !== "owner" && movement.branchId !== context.user.branchId) {
+        return { status: 403, body: { error: "Cannot delete another branch stock movement." } };
+      }
+
+      await db.collection("products").updateOne(
+        { id: movement.productId },
+        { $inc: { [`stock.${movement.branchId}`]: -toNumber(movement.quantity) }, $set: { updatedAt: new Date() } }
+      );
+
+      await db.collection("stockMovements").deleteOne({ id: movementId });
+      return { status: 200, body: { deleted: true } };
+    }
   }
 
   return methodNotAllowed();

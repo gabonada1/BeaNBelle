@@ -13,6 +13,7 @@ export function DashboardPage({ branches, session, summary }) {
   const todaysPurchases = summary.stockMovements
     .filter((movement) => movement.date === today)
     .reduce((total, movement) => total + (movement.purchaseTotal ?? 0), 0);
+  const todaysItemsSold = todaysSales.reduce((total, sale) => total + (sale.items ?? 0), 0);
   const profitPercent = totalRevenue > 0 ? Math.max(0, Math.min(100, (netProfit / totalRevenue) * 100)) : 0;
   const purchasePercent = totalRevenue > 0 ? Math.max(0, Math.min(100, (totalPurchases / totalRevenue) * 100)) : 0;
   const expensePercent = totalRevenue > 0 ? Math.max(0, Math.min(100, (totalExpenses / totalRevenue) * 100)) : 0;
@@ -69,6 +70,10 @@ export function DashboardPage({ branches, session, summary }) {
         <article className="metric-card">
           <span>Today's purchases</span>
           <strong>{formatCurrency(todaysPurchases)}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Items sold today</span>
+          <strong>{todaysItemsSold}</strong>
         </article>
         <article className="metric-card">
           <span>Current stock</span>

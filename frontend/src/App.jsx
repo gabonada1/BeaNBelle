@@ -24,6 +24,7 @@ import {
   createStockTransfer,
   createUser,
   deleteProduct,
+  deleteStockMovement,
   getBranches,
   getSummary,
   getUsers,
@@ -220,6 +221,15 @@ export default function App() {
     await refreshStore(selectedBranchId);
   }
 
+  async function handleDeleteStockMovement(movementId) {
+    try {
+      await deleteStockMovement(session.token, movementId);
+      await refreshStore(selectedBranchId);
+    } catch (error) {
+      setPageError(error.message);
+    }
+  }
+
   async function handleRefund(refund) {
     await createRefund(session.token, refund);
     await refreshStore(selectedBranchId);
@@ -311,6 +321,7 @@ export default function App() {
           onAddProduct={handleAddProduct}
           onAddStock={handleAddStock}
           onDeleteProduct={handleDeleteProduct}
+          onDeleteStockMovement={handleDeleteStockMovement}
           onTransferStock={handleTransferStock}
           onUpdateProduct={handleUpdateProduct}
         />

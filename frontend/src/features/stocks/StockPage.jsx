@@ -10,7 +10,11 @@ export function StockPage({ branches, session, summary, onRecordSale }) {
   const [quantities, setQuantities] = useState({});
   const [priceTypes, setPriceTypes] = useState({});
   const [message, setMessage] = useState("");
+  const today = new Date().toISOString().slice(0, 10);
   const categories = ["All", ...new Set(summary.inventory.map((product) => product.category))];
+  const todaysSales = summary.recentSales.filter((sale) => sale.date === today);
+  const todaysRevenue = todaysSales.reduce((total, sale) => total + (sale.amount ?? 0), 0);
+  const todaysItemsSold = todaysSales.reduce((total, sale) => total + (sale.items ?? 0), 0);
   const employeeBranch = branches.find((branch) => branch.id === session.branchId);
   const filteredStocks = summary.inventory.filter((product) => {
     const matchesCategory = selectedCategory === "All" || product.category === selectedCategory;
@@ -82,6 +86,14 @@ export function StockPage({ branches, session, summary, onRecordSale }) {
         <article className="metric-card">
           <span>Revenue</span>
           <strong>{formatCurrency(summary.totalRevenue ?? summary.totalSales)}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Today's revenue</span>
+          <strong>{formatCurrency(todaysRevenue)}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Items sold today</span>
+          <strong>{todaysItemsSold}</strong>
         </article>
         <article className="metric-card">
           <span>Stock purchases</span>
