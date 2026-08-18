@@ -17,6 +17,8 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
   const [cartSearch, setCartSearch] = useState("");
   const [message, setMessage] = useState("");
   const [showSaleModal, setShowSaleModal] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   function openSaleModal() {
     setShowSaleModal(true);
@@ -409,6 +411,53 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
           <h3>Recent Sold Items</h3>
           <p>Latest employee records</p>
         </div>
+        <div className="inventory-pagination" style={{ marginBottom: 16 }}>
+          <span className="inventory-pagination-meta">
+            Showing {Math.min(itemsPerPage, summary.recentSales.length - (currentPage - 1) * itemsPerPage)} of {summary.recentSales.length} sale{summary.recentSales.length === 1 ? "" : "s"}
+          </span>
+          <div className="pagination-controls">
+            <label className="field compact-field">
+              <span>Items per page</span>
+              <select value={itemsPerPage} onChange={(event) => {
+                setItemsPerPage(Number(event.target.value));
+                setCurrentPage(1);
+              }}>
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+            <div className="pagination-buttons">
+              <button 
+                className="secondary-button" 
+                type="button" 
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} 
+                disabled={currentPage === 1}
+              >
+                Previous
+              </button>
+              {Array.from({ length: Math.ceil(summary.recentSales.length / itemsPerPage) }, (_, i) => i + 1).map((page) => (
+                <button
+                  key={page}
+                  className={page === currentPage ? "pagination-button active" : "pagination-button"}
+                  type="button"
+                  onClick={() => setCurrentPage(page)}
+                >
+                  {page}
+                </button>
+              ))}
+              <button 
+                className="secondary-button" 
+                type="button" 
+                onClick={() => setCurrentPage(Math.min(Math.ceil(summary.recentSales.length / itemsPerPage), currentPage + 1))} 
+                disabled={currentPage === Math.ceil(summary.recentSales.length / itemsPerPage)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
@@ -426,14 +475,16 @@ export function SalesDashboard({ lastReceipt, selectedBranchId, session, summary
               </tr>
             </thead>
             <tbody>
-              {summary.recentSales.map((sale) => (
+              {summary.recentSales
+                .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                .map((sale) => (
                 <tr key={sale.id}>
                   <td>{sale.id}</td>
                   <td>{formatDate(sale.date)}</td>
                   <td>{sale.productName ?? sale.customer}</td>
                   <td>{sale.employee ?? "Branch Staff"}</td>
                   <td>{sale.channel}</td>
-                    <td>{sale.saleType ?? "-"}</td>
+                  <td>{sale.saleType ?? "-"}</td>
                   <td>{Array.isArray(sale.paymentMethod) ? sale.paymentMethod.join(", ") : sale.paymentMethod ?? "Cash"}</td>
                   <td>{sale.items}</td>
                   <td>{formatCurrency(sale.amount)}</td>
