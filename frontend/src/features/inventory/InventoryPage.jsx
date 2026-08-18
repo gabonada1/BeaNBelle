@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { formatCurrency, formatDate } from "../../utils/formatters.js";
+import { SearchableItemSelect } from "./SearchableItemSelect.jsx";
 
 export function InventoryPage({
   branches,
@@ -333,14 +334,13 @@ export function InventoryPage({
               ))}
             </select>
           </label>
-          <label className="field">
-            <span>Item</span>
-            <select value={movementProductId} onChange={(event) => setMovementProductId(event.target.value)}>
-              {movementProducts.map((product) => (
-                <option key={product.id} value={product.id}>{product.name}</option>
-              ))}
-            </select>
-          </label>
+          <SearchableItemSelect
+            label="Item"
+            value={movementProductId}
+            onChange={setMovementProductId}
+            items={movementProducts}
+            placeholder="Search items..."
+          />
           {session.role === "admin" ? (
             <div className="branch-stock-grid" style={{ marginBottom: 16 }}>
               {branches.map((branch) => (
@@ -388,17 +388,13 @@ export function InventoryPage({
           <p>Load stock for any branch and product in one action</p>
         </div>
         <form className="stock-form" onSubmit={handleBulkStockIn}>
-          <label className="field">
-            <span>Item</span>
-            <select
-              value={bulkStockForm.productId}
-              onChange={(event) => setBulkStockForm({ ...bulkStockForm, productId: event.target.value })}
-            >
-              {summary.inventory.map((product) => (
-                <option key={product.id} value={product.id}>{product.name}</option>
-              ))}
-            </select>
-          </label>
+          <SearchableItemSelect
+            label="Item"
+            value={bulkStockForm.productId}
+            onChange={(productId) => setBulkStockForm({ ...bulkStockForm, productId })}
+            items={summary.inventory}
+            placeholder="Search items..."
+          />
           <div className="branch-stock-grid" style={{ marginBottom: 16 }}>
             {branches.map((branch) => (
               <label className="field" key={branch.id}>
@@ -483,14 +479,13 @@ export function InventoryPage({
               ))}
             </select>
           </label>
-          <label className="field">
-            <span>Item</span>
-            <select value={transferProductId} onChange={(event) => setTransferProductId(event.target.value)}>
-              {transferProducts.map((product) => (
-                <option key={product.id} value={product.id}>{product.name}</option>
-              ))}
-            </select>
-          </label>
+          <SearchableItemSelect
+            label="Item"
+            value={transferProductId}
+            onChange={setTransferProductId}
+            items={transferProducts}
+            placeholder="Search items..."
+          />
           <label className="field">
             <span>From branch</span>
             <select
