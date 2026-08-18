@@ -2928,6 +2928,68 @@ body {
   background: #ea580c;
 }
 
+/* Bulk Stock Table Styles */
+.bulk-stock-table-container {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.bulk-stock-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.bulk-stock-table th {
+  background: #f9fafb;
+  border-bottom: 2px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 12px 10px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.bulk-stock-table th:first-child {
+  text-align: left;
+}
+
+.bulk-stock-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 10px;
+  text-align: center;
+}
+
+.bulk-stock-table td:first-child {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.bulk-stock-table tbody tr:hover {
+  background: var(--surface-warm);
+}
+
+.bulk-stock-table input[type="number"] {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.bulk-stock-table input[type="number"]:focus {
+  outline: none;
+  border-color: #f97316;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.1);
+}
+
 .secondary-button,
 .ghost-button {
   background: #ffffff;

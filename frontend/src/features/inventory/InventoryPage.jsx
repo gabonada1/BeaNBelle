@@ -48,12 +48,12 @@ export function InventoryPage({
     resellerPrice: "",
     retailPrice: ""
   });
+  const [bulkStockItems, setBulkStockItems] = useState([]);
   const [bulkStockForm, setBulkStockForm] = useState({
-    productId: summary.inventory[0]?.id ?? "",
-    quantityByBranch: Object.fromEntries((branches || []).map((branch) => [branch.id, ""])),
     unitCost: "",
     source: ""
   });
+  const [selectedProductForBulk, setSelectedProductForBulk] = useState("");
   const [message, setMessage] = useState("");
   const [transferMessage, setTransferMessage] = useState("");
   const categories = ["All", ...new Set(summary.inventory.map((product) => product.category))];
@@ -119,7 +119,8 @@ export function InventoryPage({
     transferCategory,
     transferFromBranchId,
     transferProductId,
-    transferToBranchId
+    transferToBranchId,
+    branches
   ]);
 
   function handleSearch(event) {
@@ -189,23 +190,69 @@ export function InventoryPage({
     setMessage("Stock-in record saved.");
   }
 
-  function handleBulkStockIn(event) {
+  function handleAddItemToBulk(event) {
     event.preventDefault();
 
-    if (!bulkStockForm.productId) {
-      setMessage("Select an item to add to stock.");
+    if (!selectedProductForBulk) {
+      setMessage("Select an item to add.");
       return;
     }
 
-    const items = branches
-      .map((branch) => ({
-        branchId: branch.id,
-        productId: bulkStockForm.productId,
-        quantity: bulkStockForm.quantityByBranch?.[branch.id] ?? "",
-        unitCost: bulkStockForm.unitCost,
-        source: bulkStockForm.source
-      }))
-      .filter((item) => item.quantity !== "" && Number(item.quantity) > 0);
+    const product = summary.inventory.find((p) => p.id === selectedProductForBulk);
+    const newItem = {
+      id: Date.now(),
+      productId: selectedProductForBulk,
+      productName: product?.name ?? "",
+      quantityByBranch: Object.fromEntries((branches || []).map((branch) => [branch.id, ""]))
+    };
+
+    setBulkStockItems([...bulkStockItems, newItem]);
+    setSelectedProductForBulk("");
+  }
+
+  function handleRemoveItemFromBulk(itemId) {
+    setBulkStockItems(bulkStockItems.filter((item) => item.id !== itemId));
+  }
+
+  function handleUpdateBulkItemQuantity(itemId, branchId, value) {
+    setBulkStockItems(
+      bulkStockItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              quantityByBranch: {
+                ...item.quantityByBranch,
+                [branchId]: value
+              }
+            }
+          : item
+      )
+    );
+  }
+
+  function handleBulkStockIn(event) {
+    event.preventDefault();
+
+    if (bulkStockItems.length === 0) {
+      setMessage("Add at least one item before saving bulk stock-in.");
+      return;
+    }
+
+    const items = [];
+    bulkStockItems.forEach((item) => {
+      branches.forEach((branch) => {
+        const quantity = item.quantityByBranch?.[branch.id];
+        if (quantity !== "" && Number(quantity) > 0) {
+          items.push({
+            branchId: branch.id,
+            productId: item.productId,
+            quantity: quantity,
+            unitCost: bulkStockForm.unitCost,
+            source: bulkStockForm.source
+          });
+        }
+      });
+    });
 
     if (items.length === 0) {
       setMessage("Enter at least one quantity for a branch before saving bulk stock-in.");
@@ -214,12 +261,12 @@ export function InventoryPage({
 
     onAddStock({ items });
 
-    setBulkStockForm((current) => ({
-      ...current,
-      quantityByBranch: Object.fromEntries((branches || []).map((branch) => [branch.id, ""])),
+    setBulkStockItems([]);
+    setBulkStockForm({
       unitCost: "",
       source: ""
-    }));
+    });
+    setSelectedProductForBulk("");
     setMessage("Bulk stock-in saved.");
   }
 
@@ -382,49 +429,110 @@ export function InventoryPage({
         {message && <p className="success-message">{message}</p>}
       </section>
 
-      <section className="panel">
+      <section className="panel wide-panel">
         <div className="panel-heading">
           <h3>Bulk Stock-In</h3>
-          <p>Load stock for any branch and product in one action</p>
+          <p>Add multiple items with quantities for each branch, then stock-in all at once</p>
         </div>
         <form className="stock-form" onSubmit={handleBulkStockIn}>
-          <SearchableItemSelect
-            label="Item"
-            value={bulkStockForm.productId}
-            onChange={(productId) => setBulkStockForm({ ...bulkStockForm, productId })}
-            items={summary.inventory}
-            placeholder="Search items..."
-          />
-          <div className="branch-stock-grid" style={{ marginBottom: 16 }}>
-            {branches.map((branch) => (
-              <label className="field" key={branch.id}>
-                <span>{branch.name}</span>
-                <input
-                  min="0"
-                  placeholder="0"
-                  type="number"
-                  value={bulkStockForm.quantityByBranch?.[branch.id] ?? ""}
-                  onChange={(event) => setBulkStockForm((current) => ({
-                    ...current,
-                    quantityByBranch: {
-                      ...current.quantityByBranch,
-                      [branch.id]: event.target.value
-                    }
-                  }))}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+              <div style={{ flex: 1 }}>
+                <SearchableItemSelect
+                  label="Add Item"
+                  value={selectedProductForBulk}
+                  onChange={setSelectedProductForBulk}
+                  items={summary.inventory}
+                  placeholder="Search items..."
                 />
-              </label>
-            ))}
+              </div>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={handleAddItemToBulk}
+                style={{ alignSelf: "flex-end", height: 40 }}
+              >
+                Add Item
+              </button>
+            </div>
           </div>
-          <label className="field">
-            <span>Purchase cost each</span>
-            <input min="0" type="number" value={bulkStockForm.unitCost} onChange={(event) => setBulkStockForm({ ...bulkStockForm, unitCost: event.target.value })} />
-          </label>
-          <label className="field">
-            <span>Supplier / Source</span>
-            <input value={bulkStockForm.source} onChange={(event) => setBulkStockForm({ ...bulkStockForm, source: event.target.value })} />
-          </label>
-          <button className="primary-button" type="submit">Add bulk stock</button>
+
+          {bulkStockItems.length > 0 && (
+            <div className="bulk-stock-table-container" style={{ marginBottom: 16 }}>
+              <table className="bulk-stock-table">
+                <thead>
+                  <tr>
+                    <th style={{ minWidth: 200 }}>Item</th>
+                    {branches.map((branch) => (
+                      <th key={branch.id} style={{ textAlign: "center", width: 80 }}>
+                        {branch.name}
+                      </th>
+                    ))}
+                    <th style={{ width: 60 }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkStockItems.map((item) => (
+                    <tr key={item.id}>
+                      <td style={{ fontWeight: 500 }}>{item.productName}</td>
+                      {branches.map((branch) => (
+                        <td key={branch.id} style={{ textAlign: "center" }}>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={item.quantityByBranch?.[branch.id] ?? ""}
+                            onChange={(event) => handleUpdateBulkItemQuantity(item.id, branch.id, event.target.value)}
+                            style={{
+                              width: "100%",
+                              padding: 6,
+                              border: "1px solid #ddd",
+                              borderRadius: 4,
+                              textAlign: "center"
+                            }}
+                          />
+                        </td>
+                      ))}
+                      <td style={{ textAlign: "center" }}>
+                        <button
+                          className="danger-button"
+                          type="button"
+                          onClick={() => handleRemoveItemFromBulk(item.id)}
+                          style={{ padding: 6 }}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+            <label className="field">
+              <span>Purchase cost each</span>
+              <input
+                min="0"
+                type="number"
+                value={bulkStockForm.unitCost}
+                onChange={(event) => setBulkStockForm({ ...bulkStockForm, unitCost: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Supplier / Source</span>
+              <input
+                value={bulkStockForm.source}
+                onChange={(event) => setBulkStockForm({ ...bulkStockForm, source: event.target.value })}
+              />
+            </label>
+          </div>
+          <button className="primary-button" type="submit" disabled={bulkStockItems.length === 0}>
+            Stock-In All Items
+          </button>
         </form>
+        {message && <p className="success-message">{message}</p>}
       </section>
 
       <section className="panel">
