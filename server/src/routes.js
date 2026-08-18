@@ -352,12 +352,16 @@ async function handleStockMovements(request, url, context) {
     const body = await readJson(request);
 
     if (Array.isArray(body.items) && body.items.length > 0) {
-      const branchId = context.user.role === "owner" ? body.branchId : context.user.branchId;
-      requireFields({ branchId }, ["branchId"]);
-
       const created = [];
+
       for (const item of body.items) {
         if (!item?.productId) continue;
+
+        const branchId = context.user.role === "owner" ? (item.branchId ?? body.branchId) : context.user.branchId;
+        if (!branchId) {
+          return { status: 400, body: { error: "A branch is required for each stock-in entry." } };
+        }
+
         const quantity = toNumber(item.quantity);
         if (quantity < 1) {
           return { status: 400, body: { error: "Each bulk stock-in item must have a quantity of at least 1." } };

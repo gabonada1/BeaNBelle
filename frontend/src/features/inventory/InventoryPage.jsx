@@ -48,9 +48,8 @@ export function InventoryPage({
     retailPrice: ""
   });
   const [bulkStockForm, setBulkStockForm] = useState({
-    branchId: session.role === "admin" ? branches[0]?.id : session.branchId,
     productId: summary.inventory[0]?.id ?? "",
-    quantity: "",
+    quantityByBranch: Object.fromEntries((branches || []).map((branch) => [branch.id, ""])),
     unitCost: "",
     source: ""
   });
@@ -151,10 +150,33 @@ export function InventoryPage({
 
   function handleStockIn(event) {
     event.preventDefault();
-    const branchId = session.role === "admin" ? movementBranchId : session.branchId;
+
+    if (session.role === "admin") {
+      const items = branches
+        .map((branch) => ({
+          branchId: branch.id,
+          productId: movementProductId,
+          quantity: branch.id === movementBranchId ? stockQuantity : "",
+          unitCost: stockUnitCost,
+          source: stockSource
+        }))
+        .filter((item) => item.quantity !== "" && Number(item.quantity) > 0);
+
+      if (items.length === 0) {
+        setMessage("Enter a quantity for at least one branch before saving stock-in.");
+        return;
+      }
+
+      onAddStock({ items });
+      setStockQuantity("");
+      setStockUnitCost("");
+      setStockSource("");
+      setMessage("Stock-in record saved for all selected branches.");
+      return;
+    }
 
     onAddStock({
-      branchId,
+      branchId: session.branchId,
       productId: movementProductId,
       quantity: stockQuantity,
       unitCost: stockUnitCost,
@@ -168,26 +190,32 @@ export function InventoryPage({
 
   function handleBulkStockIn(event) {
     event.preventDefault();
-    const branchId = session.role === "admin" ? bulkStockForm.branchId : session.branchId;
 
-    if (!bulkStockForm.productId || !bulkStockForm.quantity) {
-      setMessage("Select an item and enter a quantity for bulk stock-in.");
+    if (!bulkStockForm.productId) {
+      setMessage("Select an item to add to stock.");
       return;
     }
 
-    onAddStock({
-      branchId,
-      items: [{
+    const items = branches
+      .map((branch) => ({
+        branchId: branch.id,
         productId: bulkStockForm.productId,
-        quantity: bulkStockForm.quantity,
+        quantity: bulkStockForm.quantityByBranch?.[branch.id] ?? "",
         unitCost: bulkStockForm.unitCost,
         source: bulkStockForm.source
-      }]
-    });
+      }))
+      .filter((item) => item.quantity !== "" && Number(item.quantity) > 0);
+
+    if (items.length === 0) {
+      setMessage("Enter at least one quantity for a branch before saving bulk stock-in.");
+      return;
+    }
+
+    onAddStock({ items });
 
     setBulkStockForm((current) => ({
       ...current,
-      quantity: "",
+      quantityByBranch: Object.fromEntries((branches || []).map((branch) => [branch.id, ""])),
       unitCost: "",
       source: ""
     }));
@@ -313,18 +341,30 @@ export function InventoryPage({
               ))}
             </select>
           </label>
-          <label className="field">
-            <span>Branch</span>
-            <select
-              value={session.role === "admin" ? movementBranchId : session.branchId}
-              onChange={(event) => setMovementBranchId(event.target.value)}
-              disabled={session.role !== "admin"}
-            >
+          {session.role === "admin" ? (
+            <div className="branch-stock-grid" style={{ marginBottom: 16 }}>
               {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name}</option>
+                <label className="field" key={branch.id}>
+                  <span>{branch.name}</span>
+                  <input
+                    min="0"
+                    placeholder="0"
+                    type="number"
+                    value={branch.id === movementBranchId ? stockQuantity : ""}
+                    onChange={(event) => {
+                      setMovementBranchId(branch.id);
+                      setStockQuantity(event.target.value);
+                    }}
+                  />
+                </label>
               ))}
-            </select>
-          </label>
+            </div>
+          ) : (
+            <label className="field">
+              <span>Branch</span>
+              <input value={branches.find((branch) => branch.id === session.branchId)?.name ?? session.branchId} disabled />
+            </label>
+          )}
           <label className="field">
             <span>Quantity</span>
             <input min="1" placeholder="0" type="number" value={stockQuantity} onChange={(event) => setStockQuantity(event.target.value)} />
@@ -349,18 +389,6 @@ export function InventoryPage({
         </div>
         <form className="stock-form" onSubmit={handleBulkStockIn}>
           <label className="field">
-            <span>Branch</span>
-            <select
-              value={session.role === "admin" ? bulkStockForm.branchId : session.branchId}
-              onChange={(event) => setBulkStockForm({ ...bulkStockForm, branchId: event.target.value })}
-              disabled={session.role !== "admin"}
-            >
-              {branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
             <span>Item</span>
             <select
               value={bulkStockForm.productId}
@@ -371,10 +399,26 @@ export function InventoryPage({
               ))}
             </select>
           </label>
-          <label className="field">
-            <span>Quantity</span>
-            <input min="1" type="number" value={bulkStockForm.quantity} onChange={(event) => setBulkStockForm({ ...bulkStockForm, quantity: event.target.value })} />
-          </label>
+          <div className="branch-stock-grid" style={{ marginBottom: 16 }}>
+            {branches.map((branch) => (
+              <label className="field" key={branch.id}>
+                <span>{branch.name}</span>
+                <input
+                  min="0"
+                  placeholder="0"
+                  type="number"
+                  value={bulkStockForm.quantityByBranch?.[branch.id] ?? ""}
+                  onChange={(event) => setBulkStockForm((current) => ({
+                    ...current,
+                    quantityByBranch: {
+                      ...current.quantityByBranch,
+                      [branch.id]: event.target.value
+                    }
+                  }))}
+                />
+              </label>
+            ))}
+          </div>
           <label className="field">
             <span>Purchase cost each</span>
             <input min="0" type="number" value={bulkStockForm.unitCost} onChange={(event) => setBulkStockForm({ ...bulkStockForm, unitCost: event.target.value })} />
