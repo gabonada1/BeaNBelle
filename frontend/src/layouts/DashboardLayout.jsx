@@ -1,4 +1,17 @@
 import React from "react";
+import {
+  FiArchive,
+  FiBarChart2,
+  FiDollarSign,
+  FiHome,
+  FiLogOut,
+  FiMapPin,
+  FiPackage,
+  FiRotateCcw,
+  FiSearch,
+  FiShoppingBag,
+  FiUsers
+} from "react-icons/fi";
 
 export function DashboardLayout({
   activeTab,
@@ -26,6 +39,7 @@ export function DashboardLayout({
           </div>
         </div>
 
+        <p className="sidebar-label">Navigation</p>
         <nav className="nav-stack" aria-label="Main navigation">
           {tabs.map((tab) => (
             <button
@@ -42,19 +56,11 @@ export function DashboardLayout({
           ))}
         </nav>
 
-        <section className="sidebar-guide" aria-label="How to use this app">
-          <p className="eyebrow">Quick guide</p>
-          <ol>
-            <li>Pick the right branch.</li>
-            <li>Choose the task you need.</li>
-            <li>Fill the form and save.</li>
-          </ol>
-        </section>
-
         <div className="user-box">
-          <span>{session.role === "admin" ? "Owner access - all branches" : `Employee - ${session.branchName}`}</span>
+          <span>{session.role === "admin" ? "Owner access" : `Branch: ${session.branchName}`}</span>
           <strong>{session.userName}</strong>
           <button className="ghost-button" onClick={onLogout} type="button">
+            <FiLogOut aria-hidden="true" />
             Log out
           </button>
         </div>
@@ -68,7 +74,10 @@ export function DashboardLayout({
             <p className="topbar-copy">{activeTabInfo.description}</p>
           </div>
           <label className="topbar-search field" aria-label="Search">
-            <span className="sr-only">Search</span>
+            <span>
+              <FiSearch aria-hidden="true" />
+              Search
+            </span>
             <input placeholder="Search (Ctrl+/)" type="search" />
           </label>
           <div className="topbar-actions">
@@ -111,19 +120,19 @@ export function DashboardLayout({
 }
 
 function getTabIcon(tabId) {
-  const icons = {
-    dashboard: "OV",
-    sales: "SA",
-    stocks: "ST",
-    inventory: "IN",
-    returns: "RT",
-    reports: "RP",
-    expenses: "EX",
-    branches: "BR",
-    users: "US"
+  const iconMap = {
+    dashboard: <FiHome />,
+    sales: <FiShoppingBag />,
+    stocks: <FiPackage />,
+    inventory: <FiArchive />,
+    returns: <FiRotateCcw />,
+    reports: <FiBarChart2 />,
+    expenses: <FiDollarSign />,
+    branches: <FiMapPin />,
+    users: <FiUsers />
   };
 
-  return icons[tabId] ?? tabId.slice(0, 1).toUpperCase();
+  return iconMap[tabId] ?? null;
 }
 
 function getTabInfo(tabId) {
